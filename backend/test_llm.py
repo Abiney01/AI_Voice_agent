@@ -35,13 +35,13 @@ async def main():
         
         # Check if the fallback error message was returned
         if "trouble processing your request" in response:
-            print("\n❌ ERROR: Received the fallback error message. The actual API call failed.")
+            print("\n[ERROR] Received the fallback error message. The actual API call failed.")
             print("Please check the terminal logs above or run with DEBUG logging to see the exception details.")
         else:
-            print("\n✅ SUCCESS: LLM responded correctly!")
+            print("\n[SUCCESS] LLM responded correctly!")
             
     except Exception as e:
-        print("\n❌ EXCEPTION OCCURRED:", file=sys.stderr)
+        print("\n[EXCEPTION OCCURRED]:", file=sys.stderr)
         import traceback
         traceback.print_exc()
 

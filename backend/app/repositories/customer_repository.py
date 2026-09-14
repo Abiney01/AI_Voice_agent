@@ -1,5 +1,6 @@
-from typing import Optional
+from typing import Any, Optional, cast
 from app.core.prisma import prisma
+from app.prisma_client import types
 from app.prisma_client.models import Customer, CustomerPreferences
 from app.schemas.customer import CustomerPreferencesUpdate
 
@@ -40,13 +41,18 @@ class CustomerRepository:
         self, customer_id: int, data: CustomerPreferencesUpdate
     ) -> Optional[CustomerPreferences]:
         update_data = data.model_dump(exclude_unset=True)
+        create_data: dict[str, Any] = {
+            "customer_id": customer_id,
+            **update_data,
+        }
         return await prisma.customerpreferences.upsert(
             where={"customer_id": customer_id},
-            data={
-                "create": {
-                    "customer_id": customer_id,
-                    **update_data
+            data=cast(
+                types.CustomerPreferencesUpsertInput,
+                {
+                    "create": create_data,
+                    "update": update_data,
                 },
-                "update": update_data
-            }
+            ),
         )
+

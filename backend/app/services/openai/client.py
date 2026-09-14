@@ -17,6 +17,9 @@ def _ensure_configured() -> None:
 
 @lru_cache
 def get_openai_client() -> AsyncOpenAI:
-    """Return a cached AsyncOpenAI client instance."""
+    """Return a cached AsyncOpenAI client instance (supports OpenAI, Groq, Ollama, OpenRouter, Gemini)."""
     _ensure_configured()
-    return AsyncOpenAI(api_key=settings.openai_api_key)
+    kwargs = {"api_key": settings.openai_api_key}
+    if settings.openai_base_url and settings.openai_base_url.strip():
+        kwargs["base_url"] = settings.openai_base_url.strip()
+    return AsyncOpenAI(**kwargs)

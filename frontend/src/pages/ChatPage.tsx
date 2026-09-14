@@ -223,12 +223,6 @@ export default function ChatPage() {
       const aiMsg: ChatMessage = { role: 'assistant', content: response.message };
       addMessage(aiMsg);
 
-      const prevItems = orderRef.current?.items ?? [];
-      const newItems = response.updated_order?.items ?? [];
-      const prevItemsStr = JSON.stringify(prevItems.map(i => ({ id: i.id, qty: i.quantity })));
-      const newItemsStr = JSON.stringify(newItems.map(i => ({ id: i.id, qty: i.quantity })));
-      const cartChanged = prevItemsStr !== newItemsStr;
-
       const orderConfirmedOrCancelled = response.updated_order
         ? response.updated_order.status !== 'active'
         : false;

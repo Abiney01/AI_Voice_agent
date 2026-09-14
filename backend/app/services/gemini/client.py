@@ -16,14 +16,7 @@ def _ensure_configured() -> None:
     genai.configure(api_key=settings.gemini_api_key)
 
 
-@lru_cache
-def get_gemini_client() -> genai.GenerativeModel:
-    """Return a cached GenerativeModel for chat/generation tasks."""
-    _ensure_configured()
-    return genai.GenerativeModel(settings.gemini_model)
-
-
 def get_gemini_api() -> genai:
-    """Return the configured genai module (for embed_content etc.)."""
+    """Return the configured genai module (for embeddings / semantic memory)."""
     _ensure_configured()
     return genai
