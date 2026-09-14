@@ -1,0 +1,30 @@
+# ─── Web Framework ──────────────────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+python-multipart
+
+prisma==0.15.0
+
+# ─── Data Validation ─────────────────────────────────────────────────────────
+pydantic
+pydantic-settings
+python-dotenv
+
+# ─── Google Gemini ───────────────────────────────────────────────────────────
+google-generativeai
+
+# ─── OpenAI ──────────────────────────────────────────────────────────────────
+openai>=1.0.0
+
+
+# ─── Speech-to-Text (Faster-Whisper) ────────────────────────────────────────
+faster-whisper
+
+# ─── Text-to-Speech (Kokoro ONNX — lightweight neural TTS) ──────────────────
+kokoro-onnx
+soundfile
+numpy
+
+# ─── Utilities ───────────────────────────────────────────────────────────────
+aiofiles
+httpx

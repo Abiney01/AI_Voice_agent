@@ -1,0 +1,29 @@
+version: "3.9"
+
+# AI Voice Restaurant Concierge — Postgres + pgvector
+# Works with both Docker Compose and Podman Compose:
+#   docker compose up -d
+#   podman-compose up -d
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: avrc-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: avrc
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
