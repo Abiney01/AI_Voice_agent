@@ -200,7 +200,7 @@ export default function ChatPage() {
   }, [messages, isTyping]);
 
   const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || !customer) return;
+    if (!text.trim() || !customer || sessionEnded) return;
 
     const userMsg: ChatMessage = { role: 'user', content: text };
     addMessage(userMsg);
@@ -223,19 +223,25 @@ export default function ChatPage() {
       const aiMsg: ChatMessage = { role: 'assistant', content: response.message };
       addMessage(aiMsg);
 
+      // Check for terminal condition based on is_retryable flag in events / order_actions
+      const hasTerminalEvent =
+        response.events?.some(e => e.is_retryable === false) ||
+        response.order_actions?.some(a => a.is_retryable === false);
+
       const orderConfirmedOrCancelled = response.updated_order
         ? response.updated_order.status !== 'active'
         : false;
+
+      const isTerminal = hasTerminalEvent || orderConfirmedOrCancelled;
 
       // Always sync order — backend always returns updated_order.
       if (response.updated_order) {
         setOrder(response.updated_order as Order);
       }
 
-      // Only end the voice session when the order is confirmed or cancelled.
-      // Cart changes (add/remove/modify) keep the session alive so the user
-      // can continue ordering conversationally.
-      if (orderConfirmedOrCancelled) {
+      // If terminal (is_retryable === false), immediately terminate the conversation/session:
+      // Play the final confirmation/cancellation response and do not listen again.
+      if (isTerminal) {
         playTTS(response.message, () => {
           endVoiceSession();
         });
@@ -249,7 +255,7 @@ export default function ChatPage() {
     } finally {
       setIsTyping(false);
     }
-  }, [customer, messages, addMessage, showToast, setOrder, playTTS, endVoiceSession]);
+  }, [customer, messages, addMessage, showToast, setOrder, playTTS, endVoiceSession, sessionEnded]);
 
   const { state: recorderState, toggleRecording } = useVoiceRecorder(sendMessage);
 

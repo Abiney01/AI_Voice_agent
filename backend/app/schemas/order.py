@@ -12,6 +12,11 @@ class OrderItemAdd(BaseModel):
     customization_notes: Optional[str] = Field(None, max_length=300)
 
 
+class OrderItemUpdate(BaseModel):
+    quantity: int = Field(..., ge=0, le=50)
+
+
+
 class OrderItemOut(BaseModel):
     id: int
     menu_item_id: int

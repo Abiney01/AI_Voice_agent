@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    llm_pause_threshold_ms: int = 2000
 
     # Whisper
     whisper_model_size: str = "base"

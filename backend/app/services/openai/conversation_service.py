@@ -33,13 +33,23 @@ class ConversationService:
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
 
-        completion = await client.chat.completions.create(
-            messages=messages,
-            model=settings.openai_model,
-            temperature=0.1,  # deterministic for structured outputs
-            timeout=15.0,     # prevent indefinite hangs on API hiccups
-            **kwargs,
-        )
+        completion = None
+        for attempt in range(3):
+            try:
+                completion = await client.chat.completions.create(
+                    messages=messages,
+                    model=settings.openai_model,
+                    temperature=0.1,  # deterministic for structured outputs
+                    timeout=15.0,     # prevent indefinite hangs on API hiccups
+                    **kwargs,
+                )
+                break
+            except Exception as e:
+                if ("429" in str(e) or "rate limit" in str(e).lower()) and attempt < 2:
+                    logger.warning("[OPENAI] 429 rate limit hit in _generate, backing off 1.5s (attempt %d/3)", attempt + 1)
+                    await asyncio.sleep(1.5)
+                else:
+                    raise
 
         # content can be None in openai SDK v2 (e.g. content_filter refusal)
         content = completion.choices[0].message.content
@@ -60,12 +70,22 @@ class ConversationService:
         """
         client = self._get_client()
 
-        completion = await client.chat.completions.create(
-            messages=messages,
-            model=settings.openai_model,
-            temperature=0.7,  # slightly higher for natural, varied responses
-            timeout=15.0,     # prevent indefinite hangs on API hiccups
-        )
+        completion = None
+        for attempt in range(3):
+            try:
+                completion = await client.chat.completions.create(
+                    messages=messages,
+                    model=settings.openai_model,
+                    temperature=0.7,  # slightly higher for natural, varied responses
+                    timeout=15.0,     # prevent indefinite hangs on API hiccups
+                )
+                break
+            except Exception as e:
+                if ("429" in str(e) or "rate limit" in str(e).lower()) and attempt < 2:
+                    logger.warning("[OPENAI] 429 rate limit hit in _generate_chat, backing off 1.5s (attempt %d/3)", attempt + 1)
+                    await asyncio.sleep(1.5)
+                else:
+                    raise
 
         content = completion.choices[0].message.content
         if not content:
@@ -85,6 +105,8 @@ class ConversationService:
         recent_memories: List[str],
         conversation_history: List[Dict[str, str]],
         user_message: str,
+        recent_action_summary: Optional[str] = None,
+        structured_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate an AI concierge response using native OpenAI multi-turn format."""
         messages = build_conversation_messages(
@@ -95,6 +117,8 @@ class ConversationService:
             recent_memories=recent_memories,
             conversation_history=conversation_history,
             user_message=user_message,
+            recent_action_summary=recent_action_summary,
+            structured_context=structured_context,
         )
         try:
             return await self._generate_chat(messages)
@@ -110,37 +134,29 @@ class ConversationService:
         message: str,
         current_order_summary: str = "Empty (nothing ordered yet)",
         last_assistant_message: str = "",
+        available_menu_items: str = "",
     ) -> List[Dict[str, Any]]:
         """
         Extract structured order actions from a customer message.
 
-        The menu is intentionally excluded from this prompt to save ~500-1000
-        tokens per call. The fuzzy find_by_name lookup in MenuRepository handles
-        matching the customer's phrasing to the canonical menu item name.
-
-        current_order_summary: a compact text description of what's already in
-        the cart, so the LLM can correctly interpret remove/modify/replace requests.
-
-        last_assistant_message: the message the AI spoke to the customer in the
-        previous turn, to resolve relative additions like "add that" or "add the suggested food".
-
-        NOTE: We do NOT use json_object mode here because the OpenAI API requires
-        json_object responses to be a JSON object (not array). Our prompt returns a
-        JSON array, so using json_object mode causes the model to wrap it in an
-        object like {"actions": [...]}, which silently breaks action parsing.
+        available_menu_items: comma-separated or newline-separated dish names from the menu.
+        current_order_summary: compact text description of what's already in the cart.
+        last_assistant_message: what the AI spoke in previous turn.
         """
         # Escape any stray braces in the user message before injecting into the template.
         safe_message = message.replace("{", "{{").replace("}", "}}")
-        # current_order_summary may also contain braces (unlikely but safe to escape).
         safe_order = current_order_summary.replace("{", "{{").replace("}", "}}")
-        # last_assistant_message may also contain braces.
         safe_last_assistant = last_assistant_message.replace("{", "{{").replace("}", "}}")
+        safe_menu_items = available_menu_items.replace("{", "{{").replace("}", "}}")
+
         prompt = ORDER_EXTRACTION_PROMPT.format(
+            available_menu_items=safe_menu_items,
             message=safe_message,
             current_order=safe_order,
             last_assistant_message=safe_last_assistant,
         )
         text = ""
+
         try:
             # Use plain text mode (no json_object) so the model can return a JSON array.
             text = await self._generate(prompt, json_mode=False)

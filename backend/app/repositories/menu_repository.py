@@ -34,17 +34,36 @@ class MenuRepository:
         )
 
     async def find_by_name(self, name: str) -> Optional[MenuItem]:
-        """Fuzzy name lookup for order extraction."""
+        """Robust fuzzy name lookup for order extraction."""
         import re
-        # Clean the input name of any annotations like (V) or [spice_level]
-        cleaned_name = name.strip()
-        # Remove (V) or (v)
-        cleaned_name = re.sub(r'\s*\([vV]\)\s*', ' ', cleaned_name)
-        # Remove anything in square brackets [spice_level]
-        cleaned_name = re.sub(r'\s*\[[^\]]+\]\s*', ' ', cleaned_name)
-        cleaned_name = cleaned_name.strip()
 
-        # Try equals match first (case-insensitive)
+        if not name or not name.strip():
+            return None
+
+        def _clean(s: str) -> str:
+            # Remove (V), [spice], (2 pcs), (6 pcs), (12"), etc.
+            s = re.sub(r'\s*\([vV]\)\s*', ' ', s)
+            s = re.sub(r'\s*\[[^\]]+\]\s*', ' ', s)
+            s = re.sub(r'\s*\([^)]*\)\s*', ' ', s)
+            s = re.sub(r'["\']', '', s)
+            return re.sub(r'\s+', ' ', s).strip()
+
+        def _tokenize(s: str) -> set:
+            cleaned = _clean(s).lower()
+            tokens = set(re.findall(r'[a-z0-9]+', cleaned))
+            # Include singular versions for basic plurals
+            singulars = set()
+            for t in tokens:
+                if len(t) > 3 and t.endswith('s') and not t.endswith('ss'):
+                    singulars.add(t[:-1])
+                elif t == "coke":
+                    singulars.add("coca")
+                    singulars.add("cola")
+            return tokens | singulars
+
+        cleaned_name = _clean(name)
+
+        # 1. Exact match (case-insensitive)
         item = await prisma.menuitem.find_first(
             where={
                 "name": {"equals": cleaned_name, "mode": "insensitive"},
@@ -54,7 +73,7 @@ class MenuRepository:
         if item:
             return item
 
-        # If not found, try contains match
+        # 2. Substring match
         item = await prisma.menuitem.find_first(
             where={
                 "name": {"contains": cleaned_name, "mode": "insensitive"},
@@ -64,16 +83,46 @@ class MenuRepository:
         if item:
             return item
 
-        # If not found, try a reverse contains: the DB item name is contained
-        # within the customer's query (e.g. "biryani" in "spicy biryani please")
-        # This avoids fetching all items into Python for a loop.
+        # 3. Token-based fuzzy matching over all available items
         all_items = await prisma.menuitem.find_many(where={"is_available": True})
-        query_lower = cleaned_name.lower()
-        for item in all_items:
-            if item.name.lower() in query_lower:
-                return item
+        query_tokens = _tokenize(name)
+        if not query_tokens:
+            return None
+
+        best_item = None
+        best_score = 0.0
+
+        for it in all_items:
+            it_clean = _clean(it.name).lower()
+            # If cleaned query is an exact match for cleaned item name
+            if it_clean == cleaned_name.lower():
+                return it
+
+            it_tokens = _tokenize(it.name)
+            intersection = query_tokens & it_tokens
+            if not intersection:
+                continue
+
+            # Prioritize matching all query tokens
+            # E.g. "chicken biryani" query has 2 tokens; if both match "Chicken Biryani", score is high
+            query_coverage = len(intersection) / len(query_tokens)
+            it_coverage = len(intersection) / len(it_tokens)
+            score = (query_coverage * 0.7) + (it_coverage * 0.3)
+
+            # Bonus if original item name contains query substring
+            if cleaned_name.lower() in it.name.lower():
+                score += 0.2
+
+            if score > best_score:
+                best_score = score
+                best_item = it
+
+        # Require a reasonable matching threshold (at least 50% match)
+        if best_item and best_score >= 0.4:
+            return best_item
 
         return None
+
 
 
     async def create(self, data: MenuItemCreate) -> MenuItem:

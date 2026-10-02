@@ -132,15 +132,41 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ConversationEvent {
+  type: string;
+  status: string;
+  is_retryable: boolean;
+  details?: Record<string, unknown>;
+}
+
+export interface OrderAction {
+  action: string;
+  menu_item_name?: string;
+  menu_item_id?: number;
+  quantity: number;
+  customization_notes?: string;
+  status?: string;
+  is_retryable?: boolean;
+}
+
+export interface OrderDiscrepancy {
+  field: string;
+  item?: string | null;
+  llm_value?: unknown;
+  cart_value?: unknown;
+  message?: string;
+}
+
+export interface OrderSyncStatus {
+  is_synced: boolean;
+  discrepancies: OrderDiscrepancy[];
+}
+
 export interface ChatResponse {
   message: string;
-  order_actions: Array<{
-    action: string;
-    menu_item_name?: string;
-    menu_item_id?: number;
-    quantity: number;
-    customization_notes?: string;
-  }>;
+  order_actions: OrderAction[];
+  events: ConversationEvent[];
+  sync_status?: OrderSyncStatus;
   updated_order?: Order;
   recommendations: unknown[];
 }

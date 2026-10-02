@@ -1,6 +1,6 @@
 from typing import List
-from fastapi import APIRouter, HTTPException, Path
-from app.schemas.order import OrderCreate, OrderItemAdd, OrderOut
+from fastapi import APIRouter, Body, HTTPException, Path
+from app.schemas.order import OrderCreate, OrderItemAdd, OrderItemUpdate, OrderOut
 from app.services.order_service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -38,6 +38,18 @@ async def remove_item(
     service = OrderService()
     order = await service.remove_item(order_id, item_id)
     return _build_order_out(order)
+
+
+@router.patch("/{order_id}/items/{item_id}", response_model=OrderOut, summary="Update item quantity in order")
+async def update_item_quantity(
+    order_id: int = Path(...),
+    item_id: int = Path(...),
+    data: OrderItemUpdate = Body(...),
+):
+    service = OrderService()
+    order = await service.update_item_quantity(order_id, item_id, data.quantity)
+    return _build_order_out(order)
+
 
 
 @router.put("/{order_id}/confirm", response_model=OrderOut, summary="Confirm order")
