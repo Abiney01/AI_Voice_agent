@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import time
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -83,6 +84,42 @@ def _build_menu_summary(items) -> str:
         spice = f" [{item.spice_level}]" if item.spice_level else ""
         lines.append(f"  - {item.name}{veg}{spice} — ₹{float(item.price):.0f}")
     return "\n".join(lines)
+
+
+def _get_meal_period() -> str:
+    """Detect current meal period based on IST time."""
+    # IST = UTC+5:30
+    ist = timezone(timedelta(hours=5, minutes=30))
+    hour = datetime.now(ist).hour
+    if 5 <= hour < 11:
+        return "breakfast"
+    elif 11 <= hour < 14:
+        return "brunch"
+    elif 14 <= hour < 17:
+        return "lunch"
+    elif 17 <= hour < 20:
+        return "snacks"
+    else:
+        return "dinner"
+
+
+def _build_order_history_summary(orders: list) -> list:
+    """Build a compact order history list for LLM context (most recent first)."""
+    history = []
+    for order in orders:
+        if not order.items:
+            continue
+        items_summary = ", ".join(
+            f"{item.quantity}x {item.menu_item.name if item.menu_item else '?'}"
+            for item in order.items
+        )
+        history.append({
+            "order_id": order.id,
+            "date": order.created_at.isoformat() if hasattr(order.created_at, 'isoformat') else str(order.created_at),
+            "items": items_summary,
+            "total": float(order.total_amount),
+        })
+    return history
 
 
 def _build_order_dict(order) -> Dict[str, Any]:
@@ -190,6 +227,27 @@ _SIMPLE_TURN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ─── Fast-path confirm / cancel patterns ─────────────────────────────────────
+# When the message unambiguously means confirm or cancel, skip the extraction
+# LLM call entirely — saves ~966 tokens per such turn.
+
+_CONFIRM_FAST_RE = re.compile(
+    r"^\s*(yes\s+(place|confirm|go\s+ahead|please)|"
+    r"(place|confirm|finalize|checkout|submit|complete)\s+(my\s+)?(order|it|that)|"
+    r"(checkout|done|bill\s*please|pay\s*now|place\s*it|confirm\s*it|go\s*ahead)|"
+    r"that'?s?\s+(all|it|correct|good|fine)[,.]?\s*(place|confirm|go\s+ahead)?|"
+    r"go\s+ahead\s+and\s+(place|confirm)|"
+    r"yes\s*,?\s*please\s+(place|confirm))\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_CANCEL_FAST_RE = re.compile(
+    r"^\s*(cancel\s+(the\s+)?(order|everything|all|it)|"
+    r"(clear|reset|scratch)\s+(the\s+)?(cart|order|everything)|"
+    r"never\s+mind[,.]?\s*(cancel)?|forget\s+it[,.]?\s*(cancel)?)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
 
 def _needs_memory_retrieval(message: str, history_len: int) -> bool:
     """
@@ -254,18 +312,22 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
     history_len = len(chat_request.conversation_history)
     run_memory = _needs_memory_retrieval(clean_message, history_len)
 
+    order_repo = order_svc.order_repo
+
     if run_memory:
-        customer, (menu_summary, menu_dish_names, menu_item_names), order, memories = await asyncio.gather(
+        customer, (menu_summary, menu_dish_names, menu_item_names), order, memories, past_orders = await asyncio.gather(
             customer_repo.get_by_id(chat_request.customer_id),
             _get_cached_menu_data(menu_repo),
             order_svc.get_or_create_active_order(chat_request.customer_id),
             memory_svc.search_relevant_memories(chat_request.customer_id, clean_message),
+            order_repo.get_customer_orders(chat_request.customer_id, limit=3),
         )
     else:
-        customer, (menu_summary, menu_dish_names, menu_item_names), order = await asyncio.gather(
+        customer, (menu_summary, menu_dish_names, menu_item_names), order, past_orders = await asyncio.gather(
             customer_repo.get_by_id(chat_request.customer_id),
             _get_cached_menu_data(menu_repo),
             order_svc.get_or_create_active_order(chat_request.customer_id),
+            order_repo.get_customer_orders(chat_request.customer_id, limit=3),
         )
         memories: List[str] = []
         logger.debug("[PERF] Memory retrieval skipped (simple/mid-conversation turn)")
@@ -308,19 +370,30 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
             last_assistant_msg = msg.get("content", "")
             break
 
-    has_intent = _has_order_intent(clean_message, last_assistant_msg, menu_dish_names=menu_item_names)
-    if has_intent:
-        order_summary = _build_order_summary(order)
-        raw_actions = await conv_svc.extract_order_actions(
-            message=clean_message,
-            current_order_summary=order_summary,
-            last_assistant_message=last_assistant_msg,
-            available_menu_items=menu_dish_names,
-        )
-        logger.debug("[PERF] Order extraction fired (intent detected)")
+    # Fast-path: skip extraction LLM call for unambiguous confirm/cancel signals.
+    # These patterns are clear enough to resolve without an LLM — saves ~966 tokens/turn.
+    if _CONFIRM_FAST_RE.match(clean_message):
+        raw_actions = [{"action": "confirm", "menu_item_name": None, "quantity": 1, "customization_notes": None}]
+        has_intent = True
+        logger.info("[PERF] Order extraction fast-pathed (confirm)")
+    elif _CANCEL_FAST_RE.match(clean_message):
+        raw_actions = [{"action": "cancel", "menu_item_name": None, "quantity": 1, "customization_notes": None}]
+        has_intent = True
+        logger.info("[PERF] Order extraction fast-pathed (cancel)")
     else:
-        raw_actions = [{"action": "none"}]
-        logger.debug("[PERF] Order extraction skipped (no order intent)")
+        has_intent = _has_order_intent(clean_message, last_assistant_msg, menu_dish_names=menu_item_names)
+        if has_intent:
+            order_summary = _build_order_summary(order)
+            raw_actions = await conv_svc.extract_order_actions(
+                message=clean_message,
+                current_order_summary=order_summary,
+                last_assistant_message=last_assistant_msg,
+                available_menu_items=menu_dish_names,
+            )
+            logger.debug("[PERF] Order extraction fired (intent detected)")
+        else:
+            raw_actions = [{"action": "none"}]
+            logger.debug("[PERF] Order extraction skipped (no order intent)")
 
     t_extract = time.monotonic()
     logger.info("[PERF] extract=%.0fms intent=%s", (t_extract - t_prefetch) * 1000, has_intent)
@@ -372,8 +445,10 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
                 r["menu_item_name"] = menu_item_cache[item_n].name
         resolved_raw_actions.append(r)
 
+    # base_order_dict captured here as the pre-operation snapshot;
+    # llm_order is computed AFTER the action loop + DB reload (see below)
+    # so the comparison is between confirmed post-op cart and expected intent.
     base_order_dict = _build_order_dict(order)
-    llm_order = compute_llm_expected_order(base_order_dict, resolved_raw_actions)
 
     for raw in raw_actions:
         action = raw.get("action", "none")
@@ -680,6 +755,12 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         updated_order = order
     updated_order_dict = _build_order_dict(updated_order)
 
+    # ── Compute LLM expected order AFTER reload for accurate comparison ────────
+    # base_order_dict is the pre-op prefetch snapshot; resolved_raw_actions carries
+    # the canonically-named intent. Comparing against the fresh cart (updated_order_dict)
+    # ensures discrepancies reflect actual post-operation divergence, not pre-op state.
+    llm_order = compute_llm_expected_order(base_order_dict, resolved_raw_actions)
+
     # ── Validate order synchronization against actual cart (SOURCE OF TRUTH) ─
     sync_status = validate_order_sync(llm_order, updated_order_dict)
     if not sync_status.is_synced:
@@ -721,6 +802,8 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         user_intent = "inquiry"
 
     # ── Build unified structured context JSON ────────────────────────────────
+    meal_period = _get_meal_period()
+    order_history_summary = _build_order_history_summary(past_orders)
     structured_context = build_structured_context_dict(
         user_intent=user_intent,
         current_request=clean_message,
@@ -734,6 +817,8 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         actual_cart=updated_order_dict,
         sync_status=sync_status.model_dump(),
         instruction=sync_instruction,
+        meal_period=meal_period,
+        order_history=order_history_summary,
     )
 
     # ── Disconnect check before chat LLM call ────────────────────────────────
@@ -756,46 +841,49 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         structured_context=structured_context,
     )
 
-    # ── Guard against false success in AI response when discrepancy exists ────
-    if not sync_status.is_synced:
-        cart_item_names = {
-            clean_dish_name(it.get("menu_item_name", ""))
+    # ── Guard against false success: event-driven, not regex-based ───────────
+    # Events are already ground truth (generated by the action loop from DB outcomes).
+    # Parsing LLM free-text with regex is fragile and misses verb variations.
+    # Instead: find items that failed to add, check if LLM falsely claimed success,
+    # and override with an honest, accurate message derived from the event context.
+    failed_add_items: List[str] = []
+    for ev in events:
+        if ev.type == "item_add_failed" and ev.details:
+            name = ev.details.get("item_name", "")
+            if name:
+                failed_add_items.append(name)
+
+    if failed_add_items:
+        confirmed_item_names = {
+            it.get("menu_item_name", "").lower()
             for it in updated_order_dict.get("items", [])
         }
-        for d in sync_status.discrepancies:
-            if d.field == "item_missing" and d.item:
-                clean_d_item = clean_dish_name(d.item)
-                if clean_d_item not in cart_item_names:
-                    pattern = rf"\b(added|adding|got you|put in)\b[^\.\?!]*\b{re.escape(clean_d_item)}\b"
-                    has_false_claim = bool(re.search(pattern, ai_response.lower()))
-                    has_disclaimer = any(
-                        w in ai_response.lower()
-                        for w in [
-                            "sorry",
-                            "unfortunately",
-                            "don't have",
-                            "unavailable",
-                            "not on the menu",
-                            "not in the cart",
-                            "couldn't add",
-                            "cannot add",
-                        ]
+        false_success_phrases = (
+            "added", "adding", "got you", "put in",
+            "placed", "included", "ordered", "here's your",
+        )
+        disclaimer_phrases = (
+            "sorry", "unfortunately", "don't have", "unavailable",
+            "not on the menu", "not in the cart", "couldn't add",
+            "cannot add", "wasn't able", "unable to",
+        )
+        response_lower = ai_response.lower()
+        for failed_name in failed_add_items:
+            if failed_name.lower() not in confirmed_item_names:
+                false_claim = any(
+                    phrase in response_lower and failed_name.lower() in response_lower
+                    for phrase in false_success_phrases
+                )
+                has_disclaimer = any(w in response_lower for w in disclaimer_phrases)
+                if false_claim and not has_disclaimer:
+                    logger.warning(
+                        "[CHAT] Overriding false success claim for failed item '%s'",
+                        failed_name,
                     )
-                    if has_false_claim and not has_disclaimer:
-                        logger.warning("[CHAT] Overriding false success claim for missing item '%s'", d.item)
-                        ai_response = (
-                            f"I'm sorry, but {d.item} isn't available on our menu, so I couldn't add it to your order. "
-                            f"Would you like to try something else from our menu?"
-                        )
-                        break
-            elif d.field == "quantity" and d.item:
-                clean_d_item = clean_dish_name(d.item)
-                pattern = rf"\b(added|got)\s+{d.llm_value}\s+{re.escape(clean_d_item)}\b"
-                if bool(re.search(pattern, ai_response.lower())):
-                    logger.warning("[CHAT] Overriding false quantity claim for '%s'", d.item)
                     ai_response = (
-                        f"I was only able to add {d.cart_value} {d.item} to your order. "
-                        f"Would you like me to try adding more or keep it at {d.cart_value}?"
+                        f"I wasn't able to add {failed_name} to your order — "
+                        f"it doesn't appear to be available right now. "
+                        f"Would you like to try something else from the menu?"
                     )
                     break
 

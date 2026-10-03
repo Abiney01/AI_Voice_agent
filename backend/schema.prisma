@@ -50,6 +50,7 @@ model MenuItem {
   spice_level   String?     @db.VarChar(20)
   allergens     String?     @db.Text
   is_available  Boolean     @default(true)
+  meal_times    String?     @db.VarChar(100)
   order_items   OrderItem[]
 
   @@map("menu_items")

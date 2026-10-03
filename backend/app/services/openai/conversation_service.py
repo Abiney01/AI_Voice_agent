@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -41,13 +42,18 @@ class ConversationService:
                     model=settings.openai_model,
                     temperature=0.1,  # deterministic for structured outputs
                     timeout=15.0,     # prevent indefinite hangs on API hiccups
+                    max_tokens=200,   # extraction JSON is short; cap output tokens
                     **kwargs,
                 )
                 break
             except Exception as e:
-                if ("429" in str(e) or "rate limit" in str(e).lower()) and attempt < 2:
-                    logger.warning("[OPENAI] 429 rate limit hit in _generate, backing off 1.5s (attempt %d/3)", attempt + 1)
-                    await asyncio.sleep(1.5)
+                err_str = str(e)
+                is_429 = "429" in err_str or "rate limit" in err_str.lower()
+                # TPD (tokens per day) exhaustion — retrying burns more tokens; don't retry
+                is_tpd = "tokens per day" in err_str.lower() or "tpd" in err_str.lower()
+                if is_429 and not is_tpd and attempt < 2:
+                    logger.warning("[OPENAI] 429 RPM limit in _generate, backing off 2s (attempt %d/3)", attempt + 1)
+                    await asyncio.sleep(2.0)
                 else:
                     raise
 
@@ -78,12 +84,17 @@ class ConversationService:
                     model=settings.openai_model,
                     temperature=0.7,  # slightly higher for natural, varied responses
                     timeout=15.0,     # prevent indefinite hangs on API hiccups
+                    max_tokens=150,   # TTS responses are 1-3 sentences; cap output tokens
                 )
                 break
             except Exception as e:
-                if ("429" in str(e) or "rate limit" in str(e).lower()) and attempt < 2:
-                    logger.warning("[OPENAI] 429 rate limit hit in _generate_chat, backing off 1.5s (attempt %d/3)", attempt + 1)
-                    await asyncio.sleep(1.5)
+                err_str = str(e)
+                is_429 = "429" in err_str or "rate limit" in err_str.lower()
+                # TPD (tokens per day) exhaustion — retrying burns more tokens; don't retry
+                is_tpd = "tokens per day" in err_str.lower() or "tpd" in err_str.lower()
+                if is_429 and not is_tpd and attempt < 2:
+                    logger.warning("[OPENAI] 429 RPM limit in _generate_chat, backing off 2s (attempt %d/3)", attempt + 1)
+                    await asyncio.sleep(2.0)
                 else:
                     raise
 

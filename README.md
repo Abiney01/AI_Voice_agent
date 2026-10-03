@@ -7,9 +7,12 @@ A fully local, voice-driven restaurant ordering assistant powered by a fine-tune
 ## What It Does
 
 - **Speak to order** — microphone input is transcribed locally with Faster-Whisper
-- **Aria responds by voice** — GPT-4o-mini generates the reply; Kokoro ONNX speaks it back
+- **Diaa responds by voice** — GPT-4o-mini generates the reply; Kokoro ONNX speaks it back
 - **Handles ordering end-to-end** — add items, remove items, modify quantities, confirm or cancel the order, all through natural conversation
-- **Remembers you** — after each session, the conversation is summarised and stored as a vector-searchable memory; next visit Aria recalls your preferences
+- **Remembers you** — after each session, the conversation is summarised and stored as a vector-searchable memory; next visit Diaa recalls your preferences
+- **Preference/history separation** — order history is treated as historical context only; a single past order is never confused for a permanent preference
+- **Meal-period awareness** — breakfast items recommended at breakfast time, mains at dinner, snacks in the afternoon
+- **Natural pairing suggestions** — a single, contextually relevant complement is offered (e.g. Raita with Biryani); never a list
 - **Personalised recommendations** — 4-tier engine using personal favourites, order history, frequently-bought-together, and similar-customer signals
 - **Guardrail layer** — fast regex pre-filter blocks prompt injection and off-domain abuse before any LLM call is made
 - **No cloud voice** — Whisper and Kokoro run entirely on the server CPU; no Twilio, no Google TTS, no AWS Polly
@@ -34,7 +37,7 @@ A fully local, voice-driven restaurant ordering assistant powered by a fine-tune
 
 | Technology | Version | Role |
 |---|---|---|
-| Python | 3.13 | Runtime |
+| Python | 3.11+ | Runtime |
 | FastAPI | latest | Async REST API |
 | Uvicorn | latest | ASGI server |
 | Prisma (Python) | latest | Type-safe ORM / query builder |
@@ -125,22 +128,27 @@ GPT-4o   Embed.   (local)    (local)
 4. Parallel prefetch (asyncio.gather)
    ├── PostgreSQL: customer + preferences
    ├── PostgreSQL: active order
+   ├── PostgreSQL: last 3 confirmed orders (for order_history context)
    ├── Menu cache (10-min TTL)
    └── Gemini embedding → pgvector search → relevant memories
        (skipped on short mid-conversation turns)
         │
         ▼
 5. Intent detection (regex, no LLM cost)
-   - Order intent detected → run steps 6a + 6b concurrently
-   - No order intent      → run step 6a only
+   - Unambiguous confirm/cancel phrase  → fast-path, skip extraction LLM call
+   - Order intent detected             → run steps 6a + 6b concurrently
+   - No order intent                   → run step 6a only
         │
-        ├── 6a. POST OpenAI /chat/completions  (gpt-4o-mini, timeout=15s)
-        │       System prompt: identity + menu + customer context + memories
-        │       Returns: Aria's conversational reply
+        ├── 6a. POST OpenAI /chat/completions  (gpt-4o-mini, timeout=15s, max_tokens=150)
+        │       System: identity + menu + structured context JSON
+        │       Context JSON includes: actual_cart, user_preferences, order_history,
+        │                              meal_period, sync_status, events
+        │       Returns: Diaa's conversational reply
         │
-        └── 6b. POST OpenAI /chat/completions  (gpt-4o-mini, timeout=15s)
+        └── 6b. POST OpenAI /chat/completions  (gpt-4o-mini, timeout=15s, max_tokens=200)
                 Extraction prompt: structured JSON order actions
                 Returns: [{action, menu_item_name, quantity, notes}]
+                SKIPPED when fast-path triggered in step 5
         │
         ▼
 7. Apply order actions (parallel DB lookups for menu items)
@@ -149,30 +157,76 @@ GPT-4o   Embed.   (local)    (local)
    - cancel  → order status = 'cancelled'
         │
         ▼
-8. Return ChatResponse to frontend
+8. Cart synchronisation check
+   - Compare LLM-requested order vs actual DB cart
+   - Any discrepancy surfaced to LLM as sync_status with instruction
+   - LLM is grounded in actual_cart — never claims false success
+        │
+        ▼
+9. Return ChatResponse to frontend
    {message, order_actions, updated_order}
         │
         ▼ (BackgroundTask — does NOT delay the response)
-9. Memory update
-   - Summarise conversation (GPT-4o-mini)
-   - Embed summary (Gemini)
-   - Save to conversation_summaries + pgvector
-   - Extract preferences → upsert customer_preferences
+10. Memory update
+    - Summarise conversation (GPT-4o-mini)
+    - Embed summary (Gemini)
+    - Save to conversation_summaries + pgvector
+    - Extract preferences → upsert customer_preferences
         │
         ▼
-10. POST /voice/synthesize
+11. POST /voice/synthesize
     - sanitize_for_tts() strips markdown, emoji, ₹ → "rupees"
     - Kokoro ONNX → WAV bytes
         │
         ▼
-11. Sentence-level TTS playback (Web Audio API)
+12. Sentence-level TTS playback (Web Audio API)
     - Response split into sentences
     - Sentence 1 synthesised → played immediately
     - Sentences 2, 3… synthesised and gaplessly scheduled
     - User hears first audio in ~1 sentence time, not full response time
         │
         ▼
-12. Auto-restart microphone → back to step 1
+13. Auto-restart microphone → back to step 1
+```
+
+---
+
+## LLM Context — Structured JSON
+
+Every chat call receives a structured JSON object that keeps three concepts strictly separate:
+
+| Key | Semantic meaning |
+|---|---|
+| `actual_cart` | **Source of truth** — what is currently in the DB cart. Diaa never claims success unless this reflects it. |
+| `user_preferences` | **Stored explicit preferences** — spice level, dietary, allergies. Respected absolutely. |
+| `order_history` | **Historical context only** — past confirmed orders. A single past order is NOT treated as a preference. A preference is only inferred from a clear repeat pattern (3+ orders). |
+| `meal_period` | **Current meal time** — auto-detected from IST clock. Drives which menu categories are surfaced. |
+| `sync_status` | **Sync flag** — if `is_synced=false`, a discrepancy exists and Diaa must reconcile before continuing. |
+| `events` | **Action outcomes** — per-action `is_retryable` flag governs terminal vs ongoing conversation state. |
+
+> [!IMPORTANT]
+> `order_history` ≠ `user_preferences` ≠ `actual_cart`. These are always distinct in the context JSON, with clear semantic notes in the system prompt preventing cross-contamination.
+
+---
+
+## Menu
+
+The menu covers **72 items** across Indian, American, and Fusion cuisines, organised by meal period:
+
+| Meal Period | Categories |
+|---|---|
+| Breakfast / Brunch | Masala Dosa, Idli, Medu Vada, Pongal, Upma, Poha, Aloo Paratha, Buttermilk Pancakes, Belgian Waffles, French Toast, Classic Omelette, Avocado Toast, Breakfast Sandwich |
+| Lunch / Dinner | Biryani (Chicken, Mutton, Veg, Egg), Curries (Butter Chicken, Paneer Butter Masala, Palak Paneer, Dal Makhani, Kadai Chicken…), Burgers, Pizza, Steak, Pasta, Breads, Rice |
+| Snacks | Chicken 65, Paneer Tikka, Samosa, Pakora, Buffalo Wings, Mac & Cheese Bites, Masala Fries |
+| Desserts | Gulab Jamun, Kheer, New York Cheesecake, Warm Brownie Sundae |
+| Beverages | Mango Lassi, Masala Chai, Milkshakes, Coffee, Fresh Juice, Root Beer |
+| Fusion | Tandoori Chicken Sandwich, Tikka Masala Wrap, Paneer Quesadilla, Masala Fries |
+
+Each item carries a `meal_times` field (e.g. `"breakfast,brunch"`, `"lunch,dinner"`, `"all"`) used by the recommendation system for meal-period filtering.
+
+To reseed the menu after schema changes:
+```bash
+python reseed_menu.py
 ```
 
 ---
@@ -202,7 +256,10 @@ After each session ends (`POST /conversations/end-session`), a background task:
 4. Extracts structured preferences (spice level, dietary, favourites, dislikes)
 5. Upserts `customer_preferences`
 
-On the next visit, a vector search retrieves the 3 most semantically relevant memories from past sessions and injects them into Aria's context. Falls back to the 5 most recent if the embedding API is unavailable.
+> [!NOTE]
+> `favorite_dishes` is only updated when the customer **explicitly** states they love a dish. A single order is never treated as a favourite. This is enforced in both the preference extraction prompt and the system prompt.
+
+On the next visit, a vector search retrieves the 3 most semantically relevant memories from past sessions and injects them into Diaa's context. Falls back to the 5 most recent if the embedding API is unavailable.
 
 ---
 
@@ -242,6 +299,7 @@ On the next visit, a vector search retrieves the 3 most semantically relevant me
 | spice_level | varchar nullable |
 | allergens | text nullable |
 | is_available | boolean |
+| meal_times | varchar nullable — comma-separated periods (e.g. `"breakfast,brunch"`, `"all"`) |
 
 ### `orders`
 | Column | Type |
@@ -278,7 +336,7 @@ On the next visit, a vector search retrieves the 3 most semantically relevant me
 ## Project Structure
 
 ```
-Hackathon Project/
+Voice-Agent/
 ├── docker-compose.yml          ← PostgreSQL + pgvector container
 │
 ├── backend/
@@ -312,6 +370,7 @@ Hackathon Project/
 │   │   │   │   └── domain_guard.py          ← injection + off-domain regex filter
 │   │   │   ├── recommendations/
 │   │   │   │   └── recommendation_service.py ← 4-priority engine
+│   │   │   ├── order_sync.py                ← cart ↔ LLM state reconciliation
 │   │   │   ├── menu_service.py
 │   │   │   ├── order_service.py
 │   │   │   └── customer_service.py
@@ -323,11 +382,11 @@ Hackathon Project/
 │   │   └── schemas/
 │   │       ├── conversation.py
 │   │       ├── customer.py
-│   │       ├── menu.py
+│   │       ├── menu.py         ← includes meal_times field
 │   │       └── order.py
-│   ├── seed_menu.py            ← Seeds menu_items on first startup
-│   └── prisma/
-│       └── schema.prisma       ← DB schema + pgvector
+│   ├── seed_menu.py            ← Full 72-item Indian + American + Fusion menu
+│   ├── reseed_menu.py          ← Clears and re-seeds menu (run after schema changes)
+│   └── schema.prisma           ← DB schema + pgvector
 │
 └── frontend/
     └── src/
@@ -392,6 +451,8 @@ Create your `backend/.env` (based on [backend/.env.example](file:///d:/Voice-Age
 ```env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/avrc
 OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.groq.com/openai/v1   # optional: use Groq or another OpenAI-compatible provider
+OPENAI_MODEL=openai/gpt-oss-120b                 # optional: override model
 GEMINI_API_KEY=AIza...
 WHISPER_MODEL_SIZE=base
 KOKORO_VOICE=af_heart
@@ -404,8 +465,14 @@ prisma generate
 prisma db push
 ```
 
+#### Seed the Menu
+On first startup the menu is auto-seeded. To manually reseed (e.g. after schema changes):
+```bash
+python reseed_menu.py
+```
+
 #### Kokoro TTS Voice Models (Speech Output)
-Model files (`*.onnx` and `*.bin`) are excluded from Git due to file size limits. 
+Model files (`*.onnx` and `*.bin`) are excluded from Git due to file size limits.
 
 > [!TIP]
 > **What if you don't download Kokoro files right away?**
@@ -439,7 +506,6 @@ No manual download is required for Faster-Whisper. On the first server startup, 
 ```bash
 python -m uvicorn app.main:app --reload --port 8000
 ```
-*(The menu is automatically seeded with 41 Indian and American dishes on first startup).*
 
 ---
 
@@ -462,9 +528,10 @@ Open [http://localhost:5173](http://localhost:5173).
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `DATABASE_URL` | ✅ | — | PostgreSQL connection string |
-| `OPENAI_API_KEY` | ✅ | — | GPT-4o-mini (chat + extraction) |
+| `OPENAI_API_KEY` | ✅ | — | API key for chat + extraction model |
 | `GEMINI_API_KEY` | ✅ | — | Gemini embeddings for memory search |
-| `OPENAI_MODEL` | ❌ | `gpt-4o-mini` | Override chat model |
+| `OPENAI_MODEL` | ❌ | `gpt-4o-mini` | Override chat model (supports Groq, OpenRouter, etc.) |
+| `OPENAI_BASE_URL` | ❌ | — | Override API base URL (e.g. `https://api.groq.com/openai/v1`) |
 | `WHISPER_MODEL_SIZE` | ❌ | `base` | Whisper model size |
 | `WHISPER_DEVICE` | ❌ | `cpu` | `cpu` or `cuda` |
 | `WHISPER_COMPUTE_TYPE` | ❌ | `int8` | `int8`, `float16`, `float32` |
@@ -488,7 +555,7 @@ Open [http://localhost:5173](http://localhost:5173).
 | `DELETE` | `/orders/:id/items/:itemId` | Remove item from order |
 | `PUT` | `/orders/:id/confirm` | Confirm order |
 | `GET` | `/orders/customer/:id` | Get customer order history |
-| `POST` | `/conversations/chat` | Send message, receive Aria's reply + order actions |
+| `POST` | `/conversations/chat` | Send message, receive Diaa's reply + order actions |
 | `POST` | `/conversations/end-session` | Save session memory (background) |
 | `POST` | `/voice/transcribe` | Transcribe audio blob → text (Faster-Whisper) |
 | `POST` | `/voice/synthesize` | Convert text → WAV audio (Kokoro) |
@@ -504,9 +571,15 @@ Interactive API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 | Optimisation | Effect |
 |---|---|
 | Whisper `beam_size=1` (greedy) | ~40% faster STT vs beam_size=5 |
+| Confirm/cancel fast-path | Extraction LLM call skipped entirely on unambiguous confirm/cancel messages (~966 tokens saved) |
 | Intent detection before extraction | Extraction LLM call skipped on ~50% of turns |
+| `max_tokens=150` on chat calls | Output capped to TTS-appropriate length; prevents runaway billing |
+| `max_tokens=200` on extraction calls | Short JSON output; hard cap prevents over-generation |
+| Smart 429 retry | TPD (daily token limit) errors are never retried — retrying burns tokens you don't have. RPM (per-minute) errors back off and retry. |
+| Context JSON de-duplication | `previous_messages` removed from structured context JSON — conversation history is already sent as native `user`/`assistant` message roles; was previously sent twice |
+| Lean menu summary | `meal_times` annotation removed from per-item menu text — `meal_period` in context JSON is sufficient |
 | Conditional memory retrieval | Gemini embedding skipped for short mid-conversation turns |
-| asyncio.gather for prefetch | Customer + menu + order + memories fetched in parallel |
+| asyncio.gather for prefetch | Customer + menu + order + memories + order_history fetched in parallel |
 | Menu cache (10-min TTL) | Zero DB reads on repeated menu lookups |
 | Parallel item pre-fetch | N+1 menu DB queries collapsed into a single gather |
 | Skip order reload | No extra DB round-trip when no actions were applied |

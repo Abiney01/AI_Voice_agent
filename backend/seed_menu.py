@@ -1,14 +1,163 @@
 """
-Menu seeder — Indian + American cuisine.
+Menu seeder — Indian + American + Fusion cuisine.
 Run standalone: python seed_menu.py
 Or called automatically by app startup if menu is empty.
+
+meal_times values (comma-separated): breakfast, brunch, lunch, dinner, snacks, desserts, beverages, all
 """
 
 import asyncio
 from app.core.prisma import prisma
 
 MENU_DATA = [
-    # ─────────────────────────── INDIAN — Biryani ───────────────────────────
+    # ─────────────────────────── INDIAN BREAKFAST ────────────────────────────
+    {
+        "name": "Masala Dosa",
+        "category": "Breakfast",
+        "cuisine": "indian",
+        "description": "Crispy rice crepe filled with spiced potato masala, served with sambar and coconut chutney",
+        "price": 120.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "spice_level": "medium",
+        "allergens": "gluten",
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Plain Dosa",
+        "category": "Breakfast",
+        "cuisine": "indian",
+        "description": "Thin crispy rice crepe served with sambar and coconut chutney",
+        "price": 90.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Idli (3 pcs)",
+        "category": "Breakfast",
+        "cuisine": "indian",
+        "description": "Steamed rice cakes served with sambar and coconut chutney",
+        "price": 80.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Medu Vada (2 pcs)",
+        "category": "Breakfast",
+        "cuisine": "indian",
+        "description": "Crispy fried lentil doughnuts served with sambar and chutney",
+        "price": 90.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "allergens": "gluten",
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Pongal",
+        "category": "Breakfast",
+        "cuisine": "indian",
+        "description": "Comforting slow-cooked rice and lentil porridge tempered with ghee, pepper, and cumin",
+        "price": 100.0,
+        "is_vegetarian": True,
+        "allergens": "dairy",
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Upma",
+        "category": "Breakfast",
+        "cuisine": "indian",
+        "description": "Semolina porridge tempered with mustard seeds, curry leaves, and vegetables",
+        "price": 80.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Aloo Paratha",
+        "category": "Breakfast",
+        "cuisine": "indian",
+        "description": "Whole wheat flatbread stuffed with spiced mashed potatoes, pan-fried in ghee",
+        "price": 110.0,
+        "is_vegetarian": True,
+        "spice_level": "mild",
+        "allergens": "gluten, dairy",
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Poha",
+        "category": "Breakfast",
+        "cuisine": "indian",
+        "description": "Flattened rice stir-fried with onions, mustard seeds, turmeric, and peanuts",
+        "price": 70.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "allergens": "nuts",
+        "meal_times": "breakfast,brunch",
+    },
+    # ─────────────────────────── AMERICAN BREAKFAST ──────────────────────────
+    {
+        "name": "Buttermilk Pancakes",
+        "category": "Breakfast",
+        "cuisine": "american",
+        "description": "Fluffy stack of three buttermilk pancakes with maple syrup and butter",
+        "price": 180.0,
+        "is_vegetarian": True,
+        "allergens": "gluten, dairy, eggs",
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Belgian Waffles",
+        "category": "Breakfast",
+        "cuisine": "american",
+        "description": "Crispy golden waffles with whipped cream, fresh berries, and maple syrup",
+        "price": 200.0,
+        "is_vegetarian": True,
+        "allergens": "gluten, dairy, eggs",
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "French Toast",
+        "category": "Breakfast",
+        "cuisine": "american",
+        "description": "Thick-cut brioche dipped in vanilla custard, pan-fried golden, dusted with cinnamon sugar",
+        "price": 170.0,
+        "is_vegetarian": True,
+        "allergens": "gluten, dairy, eggs",
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Classic Omelette",
+        "category": "Breakfast",
+        "cuisine": "american",
+        "description": "Three-egg omelette with cheddar, mushrooms, bell peppers, and onions",
+        "price": 160.0,
+        "is_vegetarian": True,
+        "allergens": "dairy, eggs",
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Breakfast Sandwich",
+        "category": "Breakfast",
+        "cuisine": "american",
+        "description": "Toasted brioche bun with fried egg, cheddar, crispy bacon, and sriracha mayo",
+        "price": 220.0,
+        "is_vegetarian": False,
+        "allergens": "gluten, dairy, eggs",
+        "meal_times": "breakfast,brunch",
+    },
+    {
+        "name": "Avocado Toast",
+        "category": "Breakfast",
+        "cuisine": "american",
+        "description": "Smashed avocado on sourdough toast with poached egg, cherry tomatoes, and red chilli flakes",
+        "price": 190.0,
+        "is_vegetarian": True,
+        "allergens": "gluten, eggs",
+        "meal_times": "breakfast,brunch",
+    },
+    # ─────────────────────────── INDIAN — Biryani ────────────────────────────
     {
         "name": "Chicken Biryani",
         "category": "Biryani",
@@ -18,6 +167,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "spice_level": "medium",
         "allergens": "dairy",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Mutton Biryani",
@@ -28,6 +178,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "spice_level": "hot",
         "allergens": "dairy",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Veg Biryani",
@@ -38,6 +189,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "spice_level": "mild",
         "allergens": "dairy",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Egg Biryani",
@@ -48,6 +200,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "spice_level": "medium",
         "allergens": "eggs",
+        "meal_times": "lunch,dinner",
     },
     # ─────────────────────────── INDIAN — Curries ────────────────────────────
     {
@@ -59,6 +212,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "spice_level": "mild",
         "allergens": "dairy",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Chicken Tikka Masala",
@@ -69,6 +223,18 @@ MENU_DATA = [
         "is_vegetarian": False,
         "spice_level": "medium",
         "allergens": "dairy",
+        "meal_times": "lunch,dinner",
+    },
+    {
+        "name": "Paneer Butter Masala",
+        "category": "Curries",
+        "cuisine": "indian",
+        "description": "Cottage cheese cubes in a rich, creamy tomato-butter gravy",
+        "price": 240.0,
+        "is_vegetarian": True,
+        "spice_level": "mild",
+        "allergens": "dairy",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Palak Paneer",
@@ -79,6 +245,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "spice_level": "mild",
         "allergens": "dairy",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Dal Makhani",
@@ -90,7 +257,19 @@ MENU_DATA = [
         "is_vegan": False,
         "spice_level": "mild",
         "allergens": "dairy",
+        "meal_times": "lunch,dinner",
     },
+    {
+        "name": "Kadai Chicken",
+        "category": "Curries",
+        "cuisine": "indian",
+        "description": "Chicken cooked with bell peppers, onions, and a freshly ground kadai masala",
+        "price": 280.0,
+        "is_vegetarian": False,
+        "spice_level": "hot",
+        "meal_times": "lunch,dinner",
+    },
+    # ─────────────────────────── INDIAN — Starters / Snacks ──────────────────
     {
         "name": "Chicken 65",
         "category": "Starters",
@@ -100,6 +279,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "spice_level": "hot",
         "allergens": "eggs",
+        "meal_times": "snacks,lunch,dinner",
     },
     {
         "name": "Paneer Tikka",
@@ -110,6 +290,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "spice_level": "medium",
         "allergens": "dairy",
+        "meal_times": "snacks,lunch,dinner",
     },
     {
         "name": "Samosa (2 pcs)",
@@ -121,6 +302,19 @@ MENU_DATA = [
         "is_vegan": True,
         "spice_level": "medium",
         "allergens": "gluten",
+        "meal_times": "snacks,brunch",
+    },
+    {
+        "name": "Pakora Platter",
+        "category": "Starters",
+        "cuisine": "indian",
+        "description": "Assorted vegetable fritters in a spiced chickpea batter, served with mint chutney",
+        "price": 130.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "spice_level": "mild",
+        "allergens": "gluten",
+        "meal_times": "snacks,brunch",
     },
     # ─────────────────────────── INDIAN — Breads ─────────────────────────────
     {
@@ -131,6 +325,7 @@ MENU_DATA = [
         "price": 50.0,
         "is_vegetarian": True,
         "allergens": "gluten, dairy",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Garlic Naan",
@@ -140,6 +335,18 @@ MENU_DATA = [
         "price": 60.0,
         "is_vegetarian": True,
         "allergens": "gluten, dairy",
+        "meal_times": "lunch,dinner",
+    },
+    {
+        "name": "Plain Roti",
+        "category": "Breads",
+        "cuisine": "indian",
+        "description": "Thin whole wheat flatbread, freshly baked",
+        "price": 30.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "allergens": "gluten",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Plain Paratha",
@@ -149,6 +356,7 @@ MENU_DATA = [
         "price": 40.0,
         "is_vegetarian": True,
         "allergens": "gluten, dairy",
+        "meal_times": "breakfast,brunch,lunch,dinner",
     },
     # ─────────────────────────── INDIAN — Rice ───────────────────────────────
     {
@@ -159,6 +367,7 @@ MENU_DATA = [
         "price": 80.0,
         "is_vegetarian": True,
         "is_vegan": True,
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Jeera Rice",
@@ -168,6 +377,7 @@ MENU_DATA = [
         "price": 100.0,
         "is_vegetarian": True,
         "is_vegan": True,
+        "meal_times": "lunch,dinner",
     },
     # ─────────────────────────── INDIAN — Sides ──────────────────────────────
     {
@@ -178,6 +388,7 @@ MENU_DATA = [
         "price": 60.0,
         "is_vegetarian": True,
         "allergens": "dairy",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Papad",
@@ -188,6 +399,17 @@ MENU_DATA = [
         "is_vegetarian": True,
         "is_vegan": True,
         "allergens": "gluten",
+        "meal_times": "lunch,dinner",
+    },
+    {
+        "name": "Mixed Pickle",
+        "category": "Sides",
+        "cuisine": "indian",
+        "description": "Tangy house-made mixed vegetable pickle",
+        "price": 40.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "meal_times": "lunch,dinner",
     },
     # ─────────────────────────── INDIAN — Beverages ──────────────────────────
     {
@@ -198,6 +420,7 @@ MENU_DATA = [
         "price": 90.0,
         "is_vegetarian": True,
         "allergens": "dairy",
+        "meal_times": "all",
     },
     {
         "name": "Masala Chai",
@@ -207,6 +430,7 @@ MENU_DATA = [
         "price": 50.0,
         "is_vegetarian": True,
         "allergens": "dairy",
+        "meal_times": "all",
     },
     {
         "name": "Sweet Lassi",
@@ -216,6 +440,17 @@ MENU_DATA = [
         "price": 70.0,
         "is_vegetarian": True,
         "allergens": "dairy",
+        "meal_times": "all",
+    },
+    {
+        "name": "Fresh Lime Soda",
+        "category": "Beverages",
+        "cuisine": "indian",
+        "description": "Hand-squeezed lime with soda, choice of sweet or salted",
+        "price": 60.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "meal_times": "all",
     },
     # ─────────────────────────── INDIAN — Desserts ───────────────────────────
     {
@@ -226,6 +461,7 @@ MENU_DATA = [
         "price": 80.0,
         "is_vegetarian": True,
         "allergens": "dairy, gluten",
+        "meal_times": "desserts,lunch,dinner",
     },
     {
         "name": "Kheer",
@@ -235,6 +471,7 @@ MENU_DATA = [
         "price": 90.0,
         "is_vegetarian": True,
         "allergens": "dairy, nuts",
+        "meal_times": "desserts,lunch,dinner",
     },
     # ─────────────────────────── AMERICAN — Burgers ──────────────────────────
     {
@@ -245,6 +482,7 @@ MENU_DATA = [
         "price": 320.0,
         "is_vegetarian": False,
         "allergens": "gluten, dairy, eggs",
+        "meal_times": "brunch,lunch,dinner",
     },
     {
         "name": "BBQ Bacon Burger",
@@ -254,6 +492,7 @@ MENU_DATA = [
         "price": 380.0,
         "is_vegetarian": False,
         "allergens": "gluten, dairy, eggs",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Crispy Chicken Sandwich",
@@ -263,6 +502,7 @@ MENU_DATA = [
         "price": 340.0,
         "is_vegetarian": False,
         "allergens": "gluten, dairy, eggs",
+        "meal_times": "brunch,lunch,dinner",
     },
     {
         "name": "Veggie Beyond Burger",
@@ -273,6 +513,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "is_vegan": True,
         "allergens": "gluten",
+        "meal_times": "brunch,lunch,dinner",
     },
     # ─────────────────────────── AMERICAN — Sides ────────────────────────────
     {
@@ -283,6 +524,18 @@ MENU_DATA = [
         "price": 180.0,
         "is_vegetarian": True,
         "allergens": "dairy, gluten",
+        "meal_times": "snacks,lunch,dinner",
+    },
+    {
+        "name": "Classic Fries",
+        "category": "Sides",
+        "cuisine": "american",
+        "description": "Golden crispy seasoned fries",
+        "price": 120.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "allergens": "gluten",
+        "meal_times": "snacks,lunch,dinner",
     },
     {
         "name": "Onion Rings",
@@ -292,6 +545,7 @@ MENU_DATA = [
         "price": 140.0,
         "is_vegetarian": True,
         "allergens": "gluten, dairy",
+        "meal_times": "snacks,lunch,dinner",
     },
     {
         "name": "Classic Coleslaw",
@@ -301,6 +555,17 @@ MENU_DATA = [
         "price": 80.0,
         "is_vegetarian": True,
         "allergens": "dairy, eggs",
+        "meal_times": "lunch,dinner",
+    },
+    {
+        "name": "Garlic Bread",
+        "category": "Sides",
+        "cuisine": "american",
+        "description": "Toasted sourdough with garlic herb butter",
+        "price": 90.0,
+        "is_vegetarian": True,
+        "allergens": "gluten, dairy",
+        "meal_times": "lunch,dinner",
     },
     # ─────────────────────────── AMERICAN — Starters ─────────────────────────
     {
@@ -312,6 +577,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "spice_level": "hot",
         "allergens": "dairy, gluten",
+        "meal_times": "snacks,lunch,dinner",
     },
     {
         "name": "Mac & Cheese Bites",
@@ -321,6 +587,7 @@ MENU_DATA = [
         "price": 200.0,
         "is_vegetarian": True,
         "allergens": "dairy, gluten, eggs",
+        "meal_times": "snacks,brunch,lunch",
     },
     {
         "name": "Caesar Salad",
@@ -330,6 +597,7 @@ MENU_DATA = [
         "price": 220.0,
         "is_vegetarian": True,
         "allergens": "dairy, gluten, eggs",
+        "meal_times": "brunch,lunch,dinner",
     },
     # ─────────────────────────── AMERICAN — Mains ────────────────────────────
     {
@@ -340,6 +608,7 @@ MENU_DATA = [
         "price": 420.0,
         "is_vegetarian": False,
         "allergens": "gluten, dairy",
+        "meal_times": "lunch,dinner",
     },
     {
         "name": "Grilled Ribeye Steak",
@@ -349,6 +618,7 @@ MENU_DATA = [
         "price": 680.0,
         "is_vegetarian": False,
         "allergens": "dairy",
+        "meal_times": "dinner",
     },
     {
         "name": "New York Style Pizza (12\")",
@@ -358,6 +628,29 @@ MENU_DATA = [
         "price": 380.0,
         "is_vegetarian": True,
         "allergens": "gluten, dairy",
+        "meal_times": "lunch,dinner",
+    },
+    {
+        "name": "BBQ Chicken Pizza (12\")",
+        "category": "Mains",
+        "cuisine": "american",
+        "description": "Smoky BBQ sauce with grilled chicken, red onions, and mozzarella",
+        "price": 420.0,
+        "is_vegetarian": False,
+        "allergens": "gluten, dairy",
+        "meal_times": "lunch,dinner",
+    },
+    {
+        "name": "Penne Arrabbiata",
+        "category": "Mains",
+        "cuisine": "american",
+        "description": "Penne pasta in a spicy tomato sauce with garlic and fresh basil",
+        "price": 280.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "spice_level": "medium",
+        "allergens": "gluten",
+        "meal_times": "lunch,dinner",
     },
     # ─────────────────────────── AMERICAN — Beverages ────────────────────────
     {
@@ -368,6 +661,7 @@ MENU_DATA = [
         "price": 150.0,
         "is_vegetarian": True,
         "allergens": "dairy",
+        "meal_times": "all",
     },
     {
         "name": "Fresh Lemonade",
@@ -377,6 +671,37 @@ MENU_DATA = [
         "price": 80.0,
         "is_vegetarian": True,
         "is_vegan": True,
+        "meal_times": "all",
+    },
+    {
+        "name": "Fresh Orange Juice",
+        "category": "Beverages",
+        "cuisine": "american",
+        "description": "Freshly squeezed orange juice",
+        "price": 100.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "meal_times": "breakfast,brunch,all",
+    },
+    {
+        "name": "Americano Coffee",
+        "category": "Beverages",
+        "cuisine": "american",
+        "description": "Double-shot espresso with hot water",
+        "price": 90.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "meal_times": "all",
+    },
+    {
+        "name": "Cappuccino",
+        "category": "Beverages",
+        "cuisine": "american",
+        "description": "Rich espresso with steamed milk and a thick layer of frothy milk foam",
+        "price": 110.0,
+        "is_vegetarian": True,
+        "allergens": "dairy",
+        "meal_times": "all",
     },
     {
         "name": "Craft Root Beer",
@@ -386,6 +711,7 @@ MENU_DATA = [
         "price": 90.0,
         "is_vegetarian": True,
         "is_vegan": True,
+        "meal_times": "all",
     },
     # ─────────────────────────── AMERICAN — Desserts ─────────────────────────
     {
@@ -396,6 +722,7 @@ MENU_DATA = [
         "price": 180.0,
         "is_vegetarian": True,
         "allergens": "dairy, gluten, eggs",
+        "meal_times": "desserts,brunch,lunch,dinner",
     },
     {
         "name": "Warm Brownie Sundae",
@@ -405,6 +732,53 @@ MENU_DATA = [
         "price": 160.0,
         "is_vegetarian": True,
         "allergens": "dairy, gluten, eggs",
+        "meal_times": "desserts,lunch,dinner",
+    },
+    # ─────────────────────────── FUSION ──────────────────────────────────────
+    {
+        "name": "Tandoori Chicken Sandwich",
+        "category": "Fusion",
+        "cuisine": "fusion",
+        "description": "Tandoor-grilled chicken with mint chutney, lettuce, and pickled onions on a toasted bun",
+        "price": 300.0,
+        "is_vegetarian": False,
+        "spice_level": "medium",
+        "allergens": "gluten, dairy",
+        "meal_times": "brunch,lunch,dinner",
+    },
+    {
+        "name": "Tikka Masala Wrap",
+        "category": "Fusion",
+        "cuisine": "fusion",
+        "description": "Grilled chicken tikka with crunchy slaw and tikka mayo in a toasted flour tortilla",
+        "price": 280.0,
+        "is_vegetarian": False,
+        "spice_level": "medium",
+        "allergens": "gluten, dairy",
+        "meal_times": "brunch,lunch,dinner",
+    },
+    {
+        "name": "Masala Fries",
+        "category": "Fusion",
+        "cuisine": "fusion",
+        "description": "Crispy fries tossed with chaat masala, lime, red chilli, and coriander",
+        "price": 130.0,
+        "is_vegetarian": True,
+        "is_vegan": True,
+        "spice_level": "medium",
+        "allergens": "gluten",
+        "meal_times": "snacks,lunch,dinner",
+    },
+    {
+        "name": "Paneer Quesadilla",
+        "category": "Fusion",
+        "cuisine": "fusion",
+        "description": "Flour tortilla filled with spiced paneer, bell peppers, and melted mozzarella",
+        "price": 260.0,
+        "is_vegetarian": True,
+        "spice_level": "mild",
+        "allergens": "gluten, dairy",
+        "meal_times": "brunch,lunch,dinner",
     },
 ]
 
@@ -412,7 +786,7 @@ MENU_DATA = [
 async def seed_menu() -> None:
     for item_data in MENU_DATA:
         await prisma.menuitem.create(data=item_data)
-    print(f"Seeded {len(MENU_DATA)} menu items (Indian + American)")
+    print(f"Seeded {len(MENU_DATA)} menu items (Indian + American + Fusion)")
 
 
 if __name__ == "__main__":

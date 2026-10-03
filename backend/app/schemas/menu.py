@@ -14,6 +14,7 @@ class MenuItemBase(BaseModel):
     spice_level: Optional[str] = Field(None, examples=["mild", "medium", "hot"])
     allergens: Optional[str] = None
     is_available: bool = True
+    meal_times: Optional[str] = Field(None, examples=["breakfast,brunch", "all", "lunch,dinner"])
 
 
 class MenuItemCreate(MenuItemBase):
