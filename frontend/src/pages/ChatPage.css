@@ -16,17 +16,13 @@
 
 /* ─── Root Layout ──────────────────────────────────────────────────── */
 .diaa-layout {
-  display: grid;
-  grid-template-columns: 370px 1fr 345px;
-  grid-template-rows: 100vh;
+  position: relative;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  position: relative;
   background: #111111;
   font-family: 'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   color: #F5F1E8;
-  transition: grid-template-columns 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Background image with subtle blur */
@@ -41,39 +37,38 @@
   pointer-events: none;
 }
 
-.diaa-layout.hide-menu {
-  grid-template-columns: 1fr 345px;
-}
-
-.diaa-layout.hide-cart {
-  grid-template-columns: 370px 1fr;
-}
-
-.diaa-layout.hide-menu.hide-cart {
-  grid-template-columns: 1fr;
-}
-
-.menu-panel,
-.diaa-center,
-.order-panel {
+.diaa-center {
   position: relative;
-  z-index: 2;
+  z-index: 1;
+  width: 100%;
   height: 100vh;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ════════════════════════════════════════════════════════════════════
-   LEFT PANEL — Dynamic & Personalized Picks (Transparent Glass)
+   LEFT FLOATING COMPONENT — Personalized Picks (Max 5 dishes)
    ════════════════════════════════════════════════════════════════════ */
 .menu-panel {
+  position: absolute;
+  top: 76px;
+  left: 24px;
+  bottom: 24px;
+  width: 350px;
+  max-width: calc(100vw - 48px);
+  z-index: 10;
   display: flex;
   flex-direction: column;
-  background: rgba(14, 14, 14, 0.35);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  padding: 1.25rem 1.1rem 1rem;
+  background: rgba(18, 18, 18, 0.68);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  padding: 1.15rem 1.1rem 1rem;
+  overflow: hidden;
+  animation: floatInLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Clean Header */
@@ -105,45 +100,6 @@
   font-size: 0.72rem;
   color: #A9A39A;
   margin-top: 0.15rem;
-}
-
-/* Vegetarian Quick Filter */
-.diet-toggle-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: rgba(22, 22, 22, 0.4);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9999px;
-  padding: 0.35rem 0.65rem;
-  color: #A9A39A;
-  font-size: 0.72rem;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.18s ease;
-}
-
-.diet-toggle-btn:hover {
-  background: rgba(32, 32, 32, 0.6);
-  color: #F5F1E8;
-  border-color: rgba(255, 255, 255, 0.16);
-}
-
-.diet-toggle-btn .veg-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #4ade80;
-  box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
-}
-
-.diet-toggle-btn.active {
-  background: rgba(74, 222, 128, 0.14);
-  border-color: rgba(74, 222, 128, 0.45);
-  color: #F5F1E8;
 }
 
 /* Taste Pill Context Bar */
@@ -483,87 +439,6 @@
   align-items: center;
   flex-shrink: 0;
   padding-bottom: 1rem;
-  gap: 1rem;
-}
-
-.diaa-header-left,
-.diaa-header-right {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-}
-
-.panel-toggle-nav-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  background: #1C1C1C;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9999px;
-  padding: 0.38rem 0.8rem;
-  color: #A9A39A;
-  font-size: 0.74rem;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.18s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-}
-
-.panel-toggle-nav-btn:hover {
-  background: #242424;
-  color: #F5F1E8;
-  border-color: rgba(217, 130, 22, 0.4);
-  transform: translateY(-1px);
-}
-
-.panel-toggle-nav-btn.active {
-  color: #F5F1E8;
-  border-color: rgba(255, 255, 255, 0.14);
-}
-
-.panel-toggle-nav-btn svg {
-  color: #D98216;
-  flex-shrink: 0;
-}
-
-.cart-nav-badge {
-  background: #D98216;
-  color: #F5F1E8;
-  font-size: 0.65rem;
-  font-weight: 700;
-  border-radius: 9999px;
-  padding: 0.1rem 0.42rem;
-  line-height: 1.2;
-}
-
-.menu-header-actions,
-.order-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.panel-close-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  color: #A9A39A;
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: all 0.16s ease;
-  line-height: 1;
-}
-
-.panel-close-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #F5F1E8;
-  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .diaa-header-brand {
@@ -862,18 +737,28 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════
-   RIGHT PANEL — Your Order
+   RIGHT FLOATING COMPONENT — Your Order / Cart
    ════════════════════════════════════════════════════════════════════ */
 .diaa-layout .order-panel,
 .order-panel {
+  position: absolute;
+  top: 76px;
+  right: 24px;
+  bottom: 24px;
+  width: 340px;
+  max-width: calc(100vw - 48px);
+  z-index: 10;
   display: flex;
   flex-direction: column;
-  background: rgba(14, 14, 14, 0.35) !important;
-  backdrop-filter: blur(2px) !important;
-  -webkit-backdrop-filter: blur(2px) !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  padding: 1.25rem 1.1rem 1rem;
+  background: rgba(18, 18, 18, 0.68) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  padding: 1.15rem 1.1rem 1rem;
+  overflow: hidden;
+  animation: floatInRight 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .order-header {
@@ -1199,32 +1084,46 @@
   }
 }
 
-@media (max-width: 1200px) {
-  .diaa-layout {
-    grid-template-columns: 310px 1fr 290px;
+@keyframes floatInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-16px) scale(0.98);
   }
-  .diaa-layout.hide-menu {
-    grid-template-columns: 1fr 290px;
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
   }
-  .diaa-layout.hide-cart {
-    grid-template-columns: 310px 1fr;
+}
+
+@keyframes floatInRight {
+  from {
+    opacity: 0;
+    transform: translateX(16px) scale(0.98);
   }
-  .diaa-layout.hide-menu.hide-cart {
-    grid-template-columns: 1fr;
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
   }
 }
 
 @media (max-width: 960px) {
-  .diaa-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-    height: auto;
-    overflow-y: auto;
+  .menu-panel {
+    top: 68px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    bottom: 16px;
+    z-index: 50;
   }
-  .menu-panel,
-  .diaa-center,
+  .diaa-layout .order-panel,
   .order-panel {
-    height: auto;
-    min-height: 480px;
+    top: 68px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    bottom: 16px;
+    z-index: 50;
   }
 }

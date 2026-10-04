@@ -33,6 +33,28 @@ function splitIntoSentences(text: string): string[] {
   return parts.map(s => s.trim()).filter(s => s.length > 0);
 }
 
+function extractDishesFromText(text: string, menu: MenuItem[]): MenuItem[] {
+  if (!text || !menu.length) return [];
+  const textLower = text.toLowerCase();
+  const matched: MenuItem[] = [];
+  const seenIds = new Set<number>();
+
+  const sortedMenu = [...menu].sort((a, b) => b.name.length - a.name.length);
+
+  for (const item of sortedMenu) {
+    const nameLower = item.name.toLowerCase();
+    const escaped = nameLower.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+    if (regex.test(textLower) || textLower.includes(nameLower)) {
+      if (!seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        matched.push(item);
+      }
+    }
+  }
+  return matched;
+}
+
 const formatPrice = (price: number) => `₹${price.toLocaleString('en-IN')}`;
 
 export default function ChatPage() {
@@ -52,12 +74,8 @@ export default function ChatPage() {
 
   // Dynamic Personalization Controls
   const [activeMealPeriod, setActiveMealPeriod]   = useState<'all' | 'breakfast' | 'brunch' | 'lunch' | 'dinner' | 'snacks'>('all');
-  const [dietaryOnlyVeg, setDietaryOnlyVeg]       = useState(false);
   const [selectedDish, setSelectedDish]           = useState<MenuItem | null>(null);
-
-  // Panel Visibility Controls
-  const [showMenu, setShowMenu]                   = useState(true);
-  const [showCart, setShowCart]                   = useState(true);
+  const [llmRecommendations, setLlmRecommendations] = useState<MenuItem[] | null>(null);
 
   const audioCtxRef          = useRef<AudioContext | null>(null);
   const activeSourceRef      = useRef<AudioBufferSourceNode | null>(null);
@@ -210,25 +228,55 @@ export default function ChatPage() {
     return [...messages].reverse().find(m => m.role === 'user')?.content || '';
   }, [messages]);
 
-  // Dynamic Personalized & Recommended Dishes (Compact, top curated picks)
+  // Initial frequently ordered / favorite dishes (before LLM personalization request)
+  const initialFrequentlyOrdered = useMemo(() => {
+    if (!allMenuItems.length) return [];
+
+    // 1. Customer's explicit favorites
+    const favNames = (customer?.preferences?.favorite_dishes || '')
+      .toLowerCase()
+      .split(/[,;]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    const favItems = allMenuItems.filter(item =>
+      favNames.some(fn => item.name.toLowerCase().includes(fn) || fn.includes(item.name.toLowerCase()))
+    );
+
+    // 2. Customer's past orders
+    const pastNames = (order?.items || []).map(i => i.menu_item_name.toLowerCase());
+    const pastItems = allMenuItems.filter(item =>
+      pastNames.includes(item.name.toLowerCase()) && !favItems.some(f => f.id === item.id)
+    );
+
+    // 3. Signature popular dishes (Biryani, Butter Chicken, Dosa, Espresso, Burgers, Pizza)
+    const popularKeywords = ['biryani', 'butter chicken', 'dosa', 'burger', 'pizza', 'tandoori', 'coffee', 'shake'];
+    const popularItems = allMenuItems.filter(item =>
+      popularKeywords.some(kw => item.name.toLowerCase().includes(kw)) &&
+      !favItems.some(f => f.id === item.id) &&
+      !pastItems.some(p => p.id === item.id)
+    );
+
+    const combined = [...favItems, ...pastItems, ...popularItems, ...allMenuItems];
+    const unique: MenuItem[] = [];
+    const seen = new Set<number>();
+    for (const it of combined) {
+      if (!seen.has(it.id)) {
+        seen.add(it.id);
+        unique.push(it);
+      }
+    }
+    return unique.slice(0, 5);
+  }, [allMenuItems, customer?.preferences?.favorite_dishes, order?.items]);
+
+  // Dynamic Recommendations:
+  // Shows exact LLM produced dishes once user asks for recommendations; falls back to frequently ordered initially
   const personalizedDishes = useMemo(() => {
-    const effectivePrefs = {
-      ...(customer?.preferences || {}),
-      ...(dietaryOnlyVeg ? { dietary_preferences: 'vegetarian' } : {}),
-    };
-
-    const ranked = filterAndRankMenu(allMenuItems, {
-      mealPeriod: activeMealPeriod,
-      currentRequest: latestUserMsg,
-      preferences: effectivePrefs,
-      orderHistory: order?.items?.map(i => i.menu_item_name) || [],
-      selectedCategory: 'All',
-      searchQuery: '',
-    });
-
-    // Surface only top 6-7 personalized recommendations matching taste, preferences, and speech
-    return ranked.slice(0, 7);
-  }, [allMenuItems, activeMealPeriod, latestUserMsg, customer?.preferences, dietaryOnlyVeg, order?.items]);
+    if (llmRecommendations && llmRecommendations.length > 0) {
+      return llmRecommendations.slice(0, 5);
+    }
+    return initialFrequentlyOrdered;
+  }, [llmRecommendations, initialFrequentlyOrdered]);
 
   // Natural Complementary Pairings based on cart items & highlighted dish
   const complementaryPairings = useMemo(() => {
@@ -258,6 +306,21 @@ export default function ChatPage() {
 
       const aiMsg: ChatMessage = { role: 'assistant', content: response.message };
       addMessage(aiMsg);
+
+      // Extract and surface exact recommendations produced by LLM
+      let newRecs: MenuItem[] = [];
+      if (response.recommendations && response.recommendations.length > 0) {
+        const recNames = new Set(
+          response.recommendations.map((r: any) => (r.name || r).toString().toLowerCase())
+        );
+        newRecs = allMenuItems.filter(item => recNames.has(item.name.toLowerCase()));
+      }
+      if (newRecs.length === 0 && response.message) {
+        newRecs = extractDishesFromText(response.message, allMenuItems);
+      }
+      if (newRecs.length > 0) {
+        setLlmRecommendations(newRecs.slice(0, 5));
+      }
 
       const hasTerminalEvent =
         response.events?.some(e => e.is_retryable === false) ||
@@ -299,6 +362,7 @@ export default function ChatPage() {
 
   // Restart voice without losing cart
   const handleStartAgain = async () => {
+    setLlmRecommendations(null);
     if (customer && order && order.status !== 'active') {
       try {
         const newOrder = await getOrCreateOrder(customer.id);
@@ -437,46 +501,27 @@ export default function ChatPage() {
   const orbClass = agentState === 'ended' ? 'idle' : agentState;
 
   return (
-    <div className={`diaa-layout ${!showMenu ? 'hide-menu' : ''} ${!showCart ? 'hide-cart' : ''}`}>
+    <div className="diaa-layout">
 
       {/* ═══════════════════════════════════════════════════════
-          LEFT PANEL — Dynamic & Personalized Menu Picks
+          LEFT FLOATING COMPONENT — Personalized Picks (Max 5)
           ═══════════════════════════════════════════════════════ */}
-      {showMenu && (
-        <aside className="menu-panel">
-          
-          {/* Clean, Modern Header */}
-          <div className="menu-header">
-            <div className="menu-header-titles">
-              <h2 className="menu-title">Personalized Picks</h2>
-              <span className="menu-subtitle">Tailored to your taste & timing</span>
-            </div>
-
-            <div className="menu-header-actions">
-              <button
-                className={`diet-toggle-btn ${dietaryOnlyVeg ? 'active' : ''}`}
-                onClick={() => setDietaryOnlyVeg(v => !v)}
-                title="Toggle Vegetarian Only"
-              >
-                <span className="veg-dot" />
-                <span className="veg-text">Veg Only</span>
-              </button>
-
-              <button
-                className="panel-close-btn"
-                onClick={() => setShowMenu(false)}
-                title="Hide Menu"
-                aria-label="Hide Menu"
-              >
-                ✕
-              </button>
-            </div>
+      <aside className="menu-panel">
+        
+        {/* Clean, Modern Header */}
+        <div className="menu-header">
+          <div className="menu-header-titles">
+            <h2 className="menu-title">{llmRecommendations ? 'Diaa Recommends' : 'Frequently Ordered'}</h2>
+            <span className="menu-subtitle">
+              {llmRecommendations ? 'Matched directly from Diaa’s suggestion' : 'Top picks & customer favorites'}
+            </span>
           </div>
+        </div>
 
         {/* Dynamic Taste Context Badge */}
         <div className="taste-pill-bar">
           <span className="taste-indicator-pill">
-            <span className="pill-dot" /> {activeMealPeriod.toUpperCase()} PICKS
+            <span className="pill-dot" /> {llmRecommendations ? 'DIAA PICKS' : `${activeMealPeriod.toUpperCase()} PICKS`}
           </span>
           {customer?.preferences?.spice_level && (
             <span className="taste-pref-pill">
@@ -498,7 +543,7 @@ export default function ChatPage() {
               <p className="empty-sub">Ask Diaa for recommendations or toggle vegetarian mode.</p>
             </div>
           ) : (
-            personalizedDishes.map(item => {
+            personalizedDishes.slice(0, 5).map(item => {
               const imageUrl = getMenuItemImage(item);
               const isSelected = selectedDish?.id === item.id;
               const isFav = customer?.preferences?.favorite_dishes?.toLowerCase().includes(item.name.toLowerCase());
@@ -569,7 +614,6 @@ export default function ChatPage() {
           )}
         </div>
       </aside>
-      )}
 
       {/* ═══════════════════════════════════════════════════════
           CENTER PANEL — DIAA Voice Concierge (Voice Only)
@@ -582,60 +626,23 @@ export default function ChatPage() {
         <div className="center-inner-flow">
           {/* Header */}
           <header className="diaa-header">
-            <div className="diaa-header-left">
-              <button
-                className={`panel-toggle-nav-btn ${showMenu ? 'active' : ''}`}
-                onClick={() => setShowMenu(v => !v)}
-                title={showMenu ? "Hide Menu" : "Show Menu"}
-                aria-label={showMenu ? "Hide Menu" : "Show Menu"}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="3" y1="12" x2="21" y2="12" />
-                  <line x1="3" y1="6" x2="21" y2="6" />
-                  <line x1="3" y1="18" x2="21" y2="18" />
-                </svg>
-                <span>{showMenu ? 'Hide Menu' : 'Show Menu'}</span>
-              </button>
-
-              <div className="diaa-header-brand">
-                <span className="header-brand-crest">✦</span>
-                <div className="header-brand-titles">
-                  <span className="header-brand-name">DIAA</span>
-                  <span className="header-brand-tag">Voice Restaurant Concierge</span>
-                </div>
+            <div className="diaa-header-brand">
+              <span className="header-brand-crest">✦</span>
+              <div className="header-brand-titles">
+                <span className="header-brand-name">DIAA</span>
+                <span className="header-brand-tag">Voice Restaurant Concierge</span>
               </div>
             </div>
 
-            <div className="diaa-header-right">
-              <button
-                className={`panel-toggle-nav-btn ${showCart ? 'active' : ''}`}
-                onClick={() => setShowCart(v => !v)}
-                title={showCart ? "Hide Cart" : "Show Cart"}
-                aria-label={showCart ? "Hide Cart" : "Show Cart"}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
-                  <line x1="3" y1="6" x2="21" y2="6" />
-                  <path d="M16 10a4 4 0 0 1-8 0" />
-                </svg>
-                <span>{showCart ? 'Hide Cart' : 'Show Cart'}</span>
-                {order && order.items.length > 0 && (
-                  <span className="cart-nav-badge">
-                    {order.items.reduce((s, i) => s + i.quantity, 0)}
-                  </span>
-                )}
-              </button>
-
-              {customer && (
-                <div className="customer-chip">
-                  <div className="customer-avatar">{initials}</div>
-                  <div className="customer-meta">
-                    <span className="customer-greeting">Welcome,</span>
-                    <span className="customer-name">{customer.name || customer.phone_number}</span>
-                  </div>
+            {customer && (
+              <div className="customer-chip">
+                <div className="customer-avatar">{initials}</div>
+                <div className="customer-meta">
+                  <span className="customer-greeting">Welcome,</span>
+                  <span className="customer-name">{customer.name || customer.phone_number}</span>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </header>
 
           {/* Voice-First Concierge Interaction Area */}
@@ -716,28 +723,17 @@ export default function ChatPage() {
       </main>
 
       {/* ═══════════════════════════════════════════════════════
-          RIGHT PANEL — Your Order
+          RIGHT FLOATING COMPONENT — Your Order
           ═══════════════════════════════════════════════════════ */}
-      {showCart && (
-        <aside className="order-panel">
+      <aside className="order-panel">
 
-          {/* Order Header */}
-          <div className="order-header">
-            <h2 className="order-title">Your Order</h2>
-            <div className="order-header-actions">
-              <span className={`order-status-pill status-${order?.status || 'active'}`}>
-                {(order?.status || 'ACTIVE').toUpperCase()}
-              </span>
-              <button
-                className="panel-close-btn"
-                onClick={() => setShowCart(false)}
-                title="Hide Cart"
-                aria-label="Hide Cart"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
+        {/* Order Header */}
+        <div className="order-header">
+          <h2 className="order-title">Your Order</h2>
+          <span className={`order-status-pill status-${order?.status || 'active'}`}>
+            {(order?.status || 'ACTIVE').toUpperCase()}
+          </span>
+        </div>
 
         {/* Order Items List */}
         <div className="order-items-scroll">
@@ -826,7 +822,6 @@ export default function ChatPage() {
           </button>
         </div>
       </aside>
-      )}
     </div>
   );
 }

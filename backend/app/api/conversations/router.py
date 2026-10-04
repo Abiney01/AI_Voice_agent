@@ -906,12 +906,25 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
             convo_text,
         )
 
+    # ── Extract recommendations matching LLM response ───────────────────────
+    llm_recommendations: List[Dict[str, Any]] = []
+    if ai_response and menu_item_names:
+        rec_seen = set()
+        sorted_names = sorted(menu_item_names, key=len, reverse=True)
+        for d_name in sorted_names:
+            if re.search(r'\b' + re.escape(d_name) + r'\b', ai_response, re.IGNORECASE):
+                if d_name.lower() not in rec_seen:
+                    rec_seen.add(d_name.lower())
+                    llm_recommendations.append({"name": d_name})
+                    if len(llm_recommendations) >= 5:
+                        break
+
     return ChatResponse(
         message=ai_response,
         order_actions=order_actions,
         events=events,
         updated_order=updated_order_dict,
-        recommendations=[],
+        recommendations=llm_recommendations,
         sync_status=sync_status,
     )
 
