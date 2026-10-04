@@ -6,35 +6,39 @@
 
 /* ─── Custom Properties ─────────────────────────────────────────────────── */
 :root {
-  /* Color palette */
-  --clr-bg:           #0a0b0f;
-  --clr-surface:      #12141a;
-  --clr-surface-2:    #1a1d26;
-  --clr-surface-3:    #21253a;
-  --clr-border:       rgba(255,255,255,0.07);
-  --clr-border-hover: rgba(255,255,255,0.14);
+  /* Unified Dark Restaurant Color Palette */
+  --clr-bg:               #111111;
+  --clr-surface:          #171717;
+  --clr-surface-2:        #1C1C1C;
+  --clr-surface-3:        #222222;
+  --clr-surface-card:     #1C1C1C;
+  --clr-surface-elevated: #222222;
+  --clr-border:           rgba(255, 255, 255, 0.08);
+  --clr-border-hover:     rgba(255, 255, 255, 0.16);
+  --clr-border-amber:     rgba(217, 130, 22, 0.35);
 
-  /* Brand */
-  --clr-primary:      #f97316;   /* warm orange */
-  --clr-primary-glow: rgba(249,115,22,0.25);
-  --clr-primary-dark: #c2570a;
-  --clr-accent:       #fb923c;
-  --clr-gold:         #fbbf24;
+  /* Restaurant Brand Accents */
+  --clr-primary:          #D98216;   /* warm restaurant amber/orange */
+  --clr-primary-glow:     rgba(217, 130, 22, 0.2);
+  --clr-primary-dark:     #b86b0e;
+  --clr-accent:           #E6A23C;   /* muted gold highlight */
+  --clr-gold:             #E6A23C;
 
-  /* Text */
-  --clr-text:         #f0f0f0;
-  --clr-text-2:       #a0a4b8;
-  --clr-text-3:       #5a5f75;
+  /* Typography Colors */
+  --clr-text:             #F5F1E8;   /* warm white */
+  --clr-text-2:           #A9A39A;   /* secondary text */
+  --clr-text-3:           #6E6961;   /* tertiary text */
 
   /* Status */
-  --clr-success:      #22c55e;
-  --clr-warning:      #eab308;
-  --clr-error:        #ef4444;
-  --clr-info:         #3b82f6;
+  --clr-success:          #4ade80;
+  --clr-warning:          #E6A23C;
+  --clr-error:            #f87171;
+  --clr-info:             #60a5fa;
 
-  /* Typography */
-  --font-body:        'Inter', system-ui, sans-serif;
-  --font-display:     'Plus Jakarta Sans', system-ui, sans-serif;
+  /* Typography — Clean Modern Sans-Serif Throughout */
+  --font-sans:            'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-body:            var(--font-sans);
+  --font-display:         var(--font-sans);
 
   /* Spacing */
   --space-xs:  4px;
@@ -194,14 +198,17 @@ a { color: inherit; text-decoration: none; }
   padding: var(--space-xl);
   position: relative;
   overflow: hidden;
+  background: url('/assets/restaurant-bg.png') center center / cover no-repeat, #111111;
 }
 
 .welcome-bg {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse 60% 50% at 50% 0%, rgba(249,115,22,0.12) 0%, transparent 70%),
-    radial-gradient(ellipse 40% 30% at 80% 80%, rgba(251,191,36,0.06) 0%, transparent 60%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(17, 17, 17, 0.72) 0%,
+    rgba(17, 17, 17, 0.92) 100%
+  );
   pointer-events: none;
 }
 
@@ -570,7 +577,7 @@ a { color: inherit; text-decoration: none; }
 
 /* ─── Order Panel ────────────────────────────────────────────────────────── */
 .order-panel {
-  background: var(--clr-surface);
+  background: transparent;
   border-left: 1px solid var(--clr-border);
   display: flex;
   flex-direction: column;
@@ -689,7 +696,7 @@ a { color: inherit; text-decoration: none; }
 .order-footer {
   padding: var(--space-lg);
   border-top: 1px solid var(--clr-border);
-  background: var(--clr-surface);
+  background: transparent;
 }
 
 .order-total-row {

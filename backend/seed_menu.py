@@ -22,6 +22,7 @@ MENU_DATA = [
         "spice_level": "medium",
         "allergens": "gluten",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Masala Chai, Filter Coffee",
     },
     {
         "name": "Plain Dosa",
@@ -32,6 +33,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "is_vegan": True,
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Masala Chai, Filter Coffee",
     },
     {
         "name": "Idli (3 pcs)",
@@ -42,6 +44,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "is_vegan": True,
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Medu Vada (2 pcs), Masala Chai",
     },
     {
         "name": "Medu Vada (2 pcs)",
@@ -53,6 +56,7 @@ MENU_DATA = [
         "is_vegan": True,
         "allergens": "gluten",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Idli (3 pcs), Filter Coffee",
     },
     {
         "name": "Pongal",
@@ -63,6 +67,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "dairy",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Medu Vada (2 pcs), Filter Coffee",
     },
     {
         "name": "Upma",
@@ -73,6 +78,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "is_vegan": True,
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Filter Coffee, Masala Chai",
     },
     {
         "name": "Aloo Paratha",
@@ -84,6 +90,7 @@ MENU_DATA = [
         "spice_level": "mild",
         "allergens": "gluten, dairy",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Sweet Lassi, Mixed Pickle",
     },
     {
         "name": "Poha",
@@ -95,6 +102,7 @@ MENU_DATA = [
         "is_vegan": True,
         "allergens": "nuts",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Masala Chai, Fresh Lime Soda",
     },
     # ─────────────────────────── AMERICAN BREAKFAST ──────────────────────────
     {
@@ -106,6 +114,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "gluten, dairy, eggs",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Americano Coffee, Fresh Orange Juice",
     },
     {
         "name": "Belgian Waffles",
@@ -116,6 +125,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "gluten, dairy, eggs",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Americano Coffee, Fresh Orange Juice",
     },
     {
         "name": "French Toast",
@@ -126,6 +136,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "gluten, dairy, eggs",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Cappuccino, Fresh Orange Juice",
     },
     {
         "name": "Classic Omelette",
@@ -136,6 +147,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "dairy, eggs",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Americano Coffee, Fresh Orange Juice",
     },
     {
         "name": "Breakfast Sandwich",
@@ -146,6 +158,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "allergens": "gluten, dairy, eggs",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Americano Coffee, Fresh Orange Juice",
     },
     {
         "name": "Avocado Toast",
@@ -156,6 +169,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "gluten, eggs",
         "meal_times": "breakfast,brunch",
+        "pairs_with": "Cappuccino, Fresh Orange Juice",
     },
     # ─────────────────────────── INDIAN — Biryani ────────────────────────────
     {
@@ -168,6 +182,7 @@ MENU_DATA = [
         "spice_level": "medium",
         "allergens": "dairy",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Raita, Gulab Jamun (2 pcs)",
     },
     {
         "name": "Mutton Biryani",
@@ -179,6 +194,7 @@ MENU_DATA = [
         "spice_level": "hot",
         "allergens": "dairy",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Raita, Gulab Jamun (2 pcs)",
     },
     {
         "name": "Veg Biryani",
@@ -190,6 +206,7 @@ MENU_DATA = [
         "spice_level": "mild",
         "allergens": "dairy",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Raita, Papad",
     },
     {
         "name": "Egg Biryani",
@@ -201,6 +218,7 @@ MENU_DATA = [
         "spice_level": "medium",
         "allergens": "eggs",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Raita, Papad",
     },
     # ─────────────────────────── INDIAN — Curries ────────────────────────────
     {
@@ -213,6 +231,7 @@ MENU_DATA = [
         "spice_level": "mild",
         "allergens": "dairy",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Butter Naan, Garlic Naan, Jeera Rice",
     },
     {
         "name": "Chicken Tikka Masala",
@@ -224,6 +243,7 @@ MENU_DATA = [
         "spice_level": "medium",
         "allergens": "dairy",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Garlic Naan, Steamed Basmati Rice",
     },
     {
         "name": "Paneer Butter Masala",
@@ -235,6 +255,7 @@ MENU_DATA = [
         "spice_level": "mild",
         "allergens": "dairy",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Butter Naan, Plain Roti",
     },
     {
         "name": "Palak Paneer",
@@ -246,6 +267,7 @@ MENU_DATA = [
         "spice_level": "mild",
         "allergens": "dairy",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Garlic Naan, Jeera Rice",
     },
     {
         "name": "Dal Makhani",
@@ -258,6 +280,7 @@ MENU_DATA = [
         "spice_level": "mild",
         "allergens": "dairy",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Butter Naan, Steamed Basmati Rice",
     },
     {
         "name": "Kadai Chicken",
@@ -268,6 +291,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "spice_level": "hot",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Butter Naan, Plain Roti",
     },
     # ─────────────────────────── INDIAN — Starters / Snacks ──────────────────
     {
@@ -280,6 +304,7 @@ MENU_DATA = [
         "spice_level": "hot",
         "allergens": "eggs",
         "meal_times": "snacks,lunch,dinner",
+        "pairs_with": "Fresh Lime Soda, Mango Lassi",
     },
     {
         "name": "Paneer Tikka",
@@ -291,6 +316,7 @@ MENU_DATA = [
         "spice_level": "medium",
         "allergens": "dairy",
         "meal_times": "snacks,lunch,dinner",
+        "pairs_with": "Fresh Lime Soda, Mango Lassi",
     },
     {
         "name": "Samosa (2 pcs)",
@@ -303,6 +329,7 @@ MENU_DATA = [
         "spice_level": "medium",
         "allergens": "gluten",
         "meal_times": "snacks,brunch",
+        "pairs_with": "Masala Chai, Sweet Lassi",
     },
     {
         "name": "Pakora Platter",
@@ -315,6 +342,7 @@ MENU_DATA = [
         "spice_level": "mild",
         "allergens": "gluten",
         "meal_times": "snacks,brunch",
+        "pairs_with": "Masala Chai, Fresh Lime Soda",
     },
     # ─────────────────────────── INDIAN — Breads ─────────────────────────────
     {
@@ -462,6 +490,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "dairy, gluten",
         "meal_times": "desserts,lunch,dinner",
+        "pairs_with": "Masala Chai",
     },
     {
         "name": "Kheer",
@@ -472,6 +501,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "dairy, nuts",
         "meal_times": "desserts,lunch,dinner",
+        "pairs_with": "Masala Chai",
     },
     # ─────────────────────────── AMERICAN — Burgers ──────────────────────────
     {
@@ -483,6 +513,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "allergens": "gluten, dairy, eggs",
         "meal_times": "brunch,lunch,dinner",
+        "pairs_with": "Classic Fries, Onion Rings",
     },
     {
         "name": "BBQ Bacon Burger",
@@ -493,6 +524,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "allergens": "gluten, dairy, eggs",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Classic Fries, Onion Rings",
     },
     {
         "name": "Crispy Chicken Sandwich",
@@ -503,6 +535,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "allergens": "gluten, dairy, eggs",
         "meal_times": "brunch,lunch,dinner",
+        "pairs_with": "Loaded Cheese Fries, Classic Milkshake",
     },
     {
         "name": "Veggie Beyond Burger",
@@ -514,6 +547,7 @@ MENU_DATA = [
         "is_vegan": True,
         "allergens": "gluten",
         "meal_times": "brunch,lunch,dinner",
+        "pairs_with": "Classic Fries, Fresh Lemonade",
     },
     # ─────────────────────────── AMERICAN — Sides ────────────────────────────
     {
@@ -525,6 +559,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "dairy, gluten",
         "meal_times": "snacks,lunch,dinner",
+        "pairs_with": "Craft Root Beer, Fresh Lemonade",
     },
     {
         "name": "Classic Fries",
@@ -536,6 +571,7 @@ MENU_DATA = [
         "is_vegan": True,
         "allergens": "gluten",
         "meal_times": "snacks,lunch,dinner",
+        "pairs_with": "Classic Milkshake, Craft Root Beer",
     },
     {
         "name": "Onion Rings",
@@ -546,6 +582,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "gluten, dairy",
         "meal_times": "snacks,lunch,dinner",
+        "pairs_with": "Fresh Lemonade, Classic Milkshake",
     },
     {
         "name": "Classic Coleslaw",
@@ -578,6 +615,7 @@ MENU_DATA = [
         "spice_level": "hot",
         "allergens": "dairy, gluten",
         "meal_times": "snacks,lunch,dinner",
+        "pairs_with": "Classic Fries, Classic Coleslaw",
     },
     {
         "name": "Mac & Cheese Bites",
@@ -588,6 +626,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "dairy, gluten, eggs",
         "meal_times": "snacks,brunch,lunch",
+        "pairs_with": "Loaded Cheese Fries, Classic Milkshake",
     },
     {
         "name": "Caesar Salad",
@@ -598,6 +637,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "dairy, gluten, eggs",
         "meal_times": "brunch,lunch,dinner",
+        "pairs_with": "Garlic Bread, Fresh Lemonade",
     },
     # ─────────────────────────── AMERICAN — Mains ────────────────────────────
     {
@@ -609,6 +649,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "allergens": "gluten, dairy",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Classic Coleslaw, Loaded Cheese Fries",
     },
     {
         "name": "Grilled Ribeye Steak",
@@ -619,6 +660,7 @@ MENU_DATA = [
         "is_vegetarian": False,
         "allergens": "dairy",
         "meal_times": "dinner",
+        "pairs_with": "Garlic Bread, Caesar Salad",
     },
     {
         "name": "New York Style Pizza (12\")",
@@ -651,6 +693,7 @@ MENU_DATA = [
         "spice_level": "medium",
         "allergens": "gluten",
         "meal_times": "lunch,dinner",
+        "pairs_with": "Garlic Bread, Caesar Salad",
     },
     # ─────────────────────────── AMERICAN — Beverages ────────────────────────
     {
@@ -723,6 +766,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "dairy, gluten, eggs",
         "meal_times": "desserts,brunch,lunch,dinner",
+        "pairs_with": "Americano Coffee, Cappuccino",
     },
     {
         "name": "Warm Brownie Sundae",
@@ -733,6 +777,7 @@ MENU_DATA = [
         "is_vegetarian": True,
         "allergens": "dairy, gluten, eggs",
         "meal_times": "desserts,lunch,dinner",
+        "pairs_with": "Americano Coffee, Cappuccino",
     },
     # ─────────────────────────── FUSION ──────────────────────────────────────
     {
@@ -745,6 +790,7 @@ MENU_DATA = [
         "spice_level": "medium",
         "allergens": "gluten, dairy",
         "meal_times": "brunch,lunch,dinner",
+        "pairs_with": "Masala Fries, Mango Lassi",
     },
     {
         "name": "Tikka Masala Wrap",
@@ -756,6 +802,7 @@ MENU_DATA = [
         "spice_level": "medium",
         "allergens": "gluten, dairy",
         "meal_times": "brunch,lunch,dinner",
+        "pairs_with": "Masala Fries, Fresh Lime Soda",
     },
     {
         "name": "Masala Fries",
@@ -768,6 +815,7 @@ MENU_DATA = [
         "spice_level": "medium",
         "allergens": "gluten",
         "meal_times": "snacks,lunch,dinner",
+        "pairs_with": "Mango Lassi, Craft Root Beer",
     },
     {
         "name": "Paneer Quesadilla",
@@ -779,6 +827,7 @@ MENU_DATA = [
         "spice_level": "mild",
         "allergens": "gluten, dairy",
         "meal_times": "brunch,lunch,dinner",
+        "pairs_with": "Masala Fries, Fresh Lemonade",
     },
 ]
 

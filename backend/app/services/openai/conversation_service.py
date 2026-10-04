@@ -22,6 +22,24 @@ class ConversationService:
     def _get_client(self):
         return get_openai_client()
 
+    def _is_reasoning_model(self) -> bool:
+        """Check whether the configured model is a reasoning/thinking model."""
+        model_lower = (settings.openai_model or "").lower()
+        return any(x in model_lower for x in ["gpt-oss", "o1", "o3", "r1", "reasoner"])
+
+    def _get_reasoning_kwargs(self) -> Dict[str, Any]:
+        """
+        Return reasoning parameters if appropriate.
+        For reasoning models (like openai/gpt-oss-120b, o1, etc.), reasoning_effort='low'
+        prevents spending hundreds of tokens on chain-of-thought, keeping latency ultra-low.
+        """
+        effort = settings.openai_reasoning_effort
+        if not effort and self._is_reasoning_model():
+            effort = "low"
+        if effort:
+            return {"reasoning_effort": effort}
+        return {}
+
     async def _generate(self, prompt: str, json_mode: bool = False) -> str:
         """
         Call OpenAI with a single user message (used for extraction / summarization tasks).
@@ -34,6 +52,9 @@ class ConversationService:
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
 
+        reasoning_kwargs = self._get_reasoning_kwargs()
+        max_tokens = max(settings.openai_max_tokens, 1024)
+
         completion = None
         for attempt in range(3):
             try:
@@ -42,12 +63,17 @@ class ConversationService:
                     model=settings.openai_model,
                     temperature=0.1,  # deterministic for structured outputs
                     timeout=15.0,     # prevent indefinite hangs on API hiccups
-                    max_tokens=200,   # extraction JSON is short; cap output tokens
+                    max_tokens=max_tokens,
+                    **reasoning_kwargs,
                     **kwargs,
                 )
                 break
             except Exception as e:
                 err_str = str(e)
+                if "reasoning_effort" in err_str:
+                    logger.warning("[OPENAI] Model does not support reasoning_effort, retrying without it.")
+                    reasoning_kwargs.clear()
+                    continue
                 is_429 = "429" in err_str or "rate limit" in err_str.lower()
                 # TPD (tokens per day) exhaustion — retrying burns more tokens; don't retry
                 is_tpd = "tokens per day" in err_str.lower() or "tpd" in err_str.lower()
@@ -57,10 +83,16 @@ class ConversationService:
                 else:
                     raise
 
-        # content can be None in openai SDK v2 (e.g. content_filter refusal)
-        content = completion.choices[0].message.content
+        choice = completion.choices[0]
+        content = choice.message.content
         if not content:
-            raise ValueError("OpenAI returned an empty/null response content")
+            finish_reason = getattr(choice, "finish_reason", None)
+            refusal = getattr(choice.message, "refusal", None)
+            logger.error(
+                "[OPENAI] _generate returned empty content! finish_reason=%s, refusal=%s",
+                finish_reason, refusal
+            )
+            raise ValueError(f"OpenAI returned an empty/null response content (finish_reason={finish_reason})")
 
         response = content.strip()
         # Clean up any stray 'Diaa:' prefix
@@ -76,6 +108,9 @@ class ConversationService:
         """
         client = self._get_client()
 
+        reasoning_kwargs = self._get_reasoning_kwargs()
+        max_tokens = max(settings.openai_max_tokens, 1024)
+
         completion = None
         for attempt in range(3):
             try:
@@ -84,11 +119,16 @@ class ConversationService:
                     model=settings.openai_model,
                     temperature=0.7,  # slightly higher for natural, varied responses
                     timeout=15.0,     # prevent indefinite hangs on API hiccups
-                    max_tokens=150,   # TTS responses are 1-3 sentences; cap output tokens
+                    max_tokens=max_tokens,
+                    **reasoning_kwargs,
                 )
                 break
             except Exception as e:
                 err_str = str(e)
+                if "reasoning_effort" in err_str:
+                    logger.warning("[OPENAI] Model does not support reasoning_effort, retrying without it.")
+                    reasoning_kwargs.clear()
+                    continue
                 is_429 = "429" in err_str or "rate limit" in err_str.lower()
                 # TPD (tokens per day) exhaustion — retrying burns more tokens; don't retry
                 is_tpd = "tokens per day" in err_str.lower() or "tpd" in err_str.lower()
@@ -98,9 +138,16 @@ class ConversationService:
                 else:
                     raise
 
-        content = completion.choices[0].message.content
+        choice = completion.choices[0]
+        content = choice.message.content
         if not content:
-            raise ValueError("OpenAI returned an empty/null response content")
+            finish_reason = getattr(choice, "finish_reason", None)
+            refusal = getattr(choice.message, "refusal", None)
+            logger.error(
+                "[OPENAI] _generate_chat returned empty content! finish_reason=%s, refusal=%s",
+                finish_reason, refusal
+            )
+            raise ValueError(f"OpenAI returned an empty/null response content (finish_reason={finish_reason})")
 
         response = content.strip()
         if response.startswith("Diaa:"):

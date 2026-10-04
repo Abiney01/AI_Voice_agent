@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     openai_base_url: str = ""
+    openai_max_tokens: int = 1024
+    openai_reasoning_effort: str | None = None
 
     # App
     app_env: str = "development"

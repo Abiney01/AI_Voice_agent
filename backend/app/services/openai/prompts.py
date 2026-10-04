@@ -194,6 +194,12 @@ def build_structured_context_dict(
         },
         # Preferences — explicit stored preferences only
         "user_preferences": customer_preferences or {},
+        "dietary_restrictions": [
+            d for d in [
+                customer_preferences.get("dietary_preferences") if customer_preferences else None,
+                f"Allergies: {customer_preferences.get('allergies')}" if customer_preferences and customer_preferences.get('allergies') else None,
+            ] if d
+        ],
         # Order history — historical context only, not preferences
         "order_history": order_history or [],
         "meal_period": meal_period or "dinner",

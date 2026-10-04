@@ -15,6 +15,7 @@ class MenuItemBase(BaseModel):
     allergens: Optional[str] = None
     is_available: bool = True
     meal_times: Optional[str] = Field(None, examples=["breakfast,brunch", "all", "lunch,dinner"])
+    pairs_with: Optional[str] = Field(None, examples=["Butter Naan, Garlic Naan", "Jeera Rice, Raita"])
 
 
 class MenuItemCreate(MenuItemBase):

@@ -57,6 +57,8 @@ export interface MenuItem {
   spice_level?: string;
   allergens?: string;
   is_available: boolean;
+  meal_times?: string;
+  pairs_with?: string;
 }
 
 export async function getMenu(limit?: number): Promise<MenuItem[]> {
