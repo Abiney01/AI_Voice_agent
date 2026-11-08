@@ -1,15 +1,35 @@
-from typing import Optional
+from typing import List, Optional
 from fastapi import HTTPException
 from app.prisma_client.models import Order
 from app.repositories.menu_repository import MenuRepository
 from app.repositories.order_repository import OrderRepository
+from app.repositories.customer_repository import CustomerRepository
 from app.schemas.order import OrderItemAdd
+from app.services.restrictions.allergy_validator import check_dish_conflict
+
+
+def _split_pref(val) -> List[str]:
+    """Split a comma-separated preference string into a list of stripped tokens.
+
+    Handles the three storage shapes that may appear in the DB:
+    - None / empty string   → []
+    - 'peanut, shellfish'   → ['peanut', 'shellfish']
+    - "['peanut', 'nut']"   → ['peanut', 'nut']   (Python-repr artefact from old bug)
+    """
+    if not val:
+        return []
+    text = str(val).strip()
+    # Strip Python list repr brackets produced by the old str(list) serialisation bug
+    if text.startswith('[') and text.endswith(']'):
+        text = text[1:-1]
+    return [s.strip().strip("'\"") for s in text.split(',') if s.strip().strip("'\"")]
 
 
 class OrderService:
     def __init__(self):
         self.order_repo = OrderRepository()
         self.menu_repo = MenuRepository()
+        self.customer_repo = CustomerRepository()
 
     async def get_or_create_active_order(self, customer_id: int) -> Order:
         """Get existing active order or start a fresh one."""
@@ -34,6 +54,24 @@ class OrderService:
             raise HTTPException(status_code=404, detail="Menu item not found")
         if not menu_item.is_available:
             raise HTTPException(status_code=400, detail=f"{menu_item.name} is currently unavailable")
+
+        # Backend allergy & disliked food validation
+        if getattr(order, "customer_id", None):
+            customer = await self.customer_repo.get_by_id(order.customer_id)
+            if customer and getattr(customer, "preferences", None):
+                allergies = _split_pref(customer.preferences.allergies)
+                dislikes = _split_pref(customer.preferences.disliked_dishes)
+                conflict_type, conflict_ing = check_dish_conflict(menu_item, allergies, dislikes)
+                if conflict_type == "allergy":
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Cannot add {menu_item.name}: dish contains {conflict_ing}, which violates known customer allergy."
+                    )
+                elif conflict_type == "dislike":
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Cannot add {menu_item.name}: dish contains {conflict_ing}, which customer has stated they dislike."
+                    )
 
         await self.order_repo.add_item(order, menu_item, data.quantity, data.customization_notes)
         return await self.order_repo.get_by_id(order_id)

@@ -1,4 +1,5 @@
 import type { MenuItem, OrderItem } from '../services/api';
+import { isDishConflicting } from './menuFilter';
 
 const CANONICAL_PAIRINGS: Record<string, string[]> = {
   'paneer butter masala': ['Butter Naan', 'Garlic Naan'],
@@ -27,7 +28,9 @@ export function getComplementaryPairings(
   cartItems: OrderItem[],
   menuItems: MenuItem[],
   selectedItem?: MenuItem | null,
-  limit: number = 2
+  limit: number = 2,
+  allergies: string[] = [],
+  dislikes: string[] = []
 ): MenuItem[] {
   if (!menuItems || menuItems.length === 0) return [];
 
@@ -36,6 +39,11 @@ export function getComplementaryPairings(
 
   for (const item of menuItems) {
     if (!item.is_available) continue;
+    // Strictly filter out items that violate allergies or dislikes
+    if (allergies.length > 0 || dislikes.length > 0) {
+      const check = isDishConflicting(item, allergies, dislikes);
+      if (check.conflict) continue;
+    }
     menuByName.set(item.name.toLowerCase().trim(), item);
     // Also index without parentheses e.g. "Idli" for "Idli (3 pcs)"
     const clean = item.name.toLowerCase().replace(/\s*\([^)]*\)/g, '').trim();

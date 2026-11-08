@@ -18,6 +18,49 @@ export interface FilterOptions {
 }
 
 /**
+ * Safely parse a comma-separated or bracketed preference string into token list.
+ */
+export function parsePreferencesList(raw?: string): string[] {
+  if (!raw) return [];
+  let text = raw.trim();
+  if (text.startsWith('[') && text.endsWith(']')) {
+    text = text.slice(1, -1);
+  }
+  return text
+    .toLowerCase()
+    .split(/[,;]+/)
+    .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean);
+}
+
+/**
+ * Check if a menu item conflicts with known allergies or dislikes.
+ */
+export function isDishConflicting(
+  item: MenuItem,
+  allergies: string[] = [],
+  dislikes: string[] = []
+): { conflict: boolean; reason?: 'allergy' | 'dislike'; conflictItem?: string } {
+  const itemTextWithAllergens = `${item.name} ${item.description || ''} ${item.allergens || ''}`.toLowerCase();
+  for (const allergy of allergies) {
+    const cleaned = allergy.toLowerCase().trim();
+    if (cleaned && itemTextWithAllergens.includes(cleaned)) {
+      return { conflict: true, reason: 'allergy', conflictItem: cleaned };
+    }
+  }
+
+  const itemText = `${item.name} ${item.description || ''}`.toLowerCase();
+  for (const dislike of dislikes) {
+    const cleaned = dislike.toLowerCase().trim();
+    if (cleaned && itemText.includes(cleaned)) {
+      return { conflict: true, reason: 'dislike', conflictItem: cleaned };
+    }
+  }
+
+  return { conflict: false };
+}
+
+/**
  * Detect current meal period based on IST time (matches backend).
  */
 export function detectMealPeriod(): 'breakfast' | 'brunch' | 'lunch' | 'dinner' | 'snacks' {
@@ -69,12 +112,18 @@ export function filterAndRankMenu(items: MenuItem[], options: FilterOptions): Me
   const wantsIndian    = /\b(indian|desi|curry|biryani|naan|roti|paratha|dosa)\b/.test(reqLower) || preferences.favorite_dishes?.toLowerCase().includes('indian');
   const wantsAmerican  = /\b(american|western|burger|fries|pizza|steak|wings|pancake)\b/.test(reqLower);
 
-  // Parse allergies from preferences
-  const allergies = (preferences.allergies || '')
-    .toLowerCase()
-    .split(/[,;]+/)
-    .map(s => s.trim())
-    .filter(Boolean);
+  // Parse allergies and dislikes from preferences and current request
+  const allergies = parsePreferencesList(preferences.allergies);
+  const dislikes = parsePreferencesList(preferences.disliked_dishes);
+
+  // Detect dislike in current request, e.g. "don't like mushrooms"
+  const dislikeMatch = reqLower.match(/\b(?:don'?t\s+like|dislike|hate|avoid)\s+([a-z\s]+)/);
+  if (dislikeMatch) {
+    const rawDislike = dislikeMatch[1].replace(/\b(any|the|dishes|food)\b/g, '').trim();
+    if (rawDislike && !dislikes.includes(rawDislike)) {
+      dislikes.push(rawDislike);
+    }
+  }
 
   // Active meal period to filter (explicit request overrides auto-detected period)
   let activePeriod: string | undefined = mealPeriod;
@@ -114,13 +163,11 @@ export function filterAndRankMenu(items: MenuItem[], options: FilterOptions): Me
       return false;
     }
 
-    // Hard filter: Allergies
-    if (allergies.length > 0 && item.allergens) {
-      const itemAllergens = item.allergens.toLowerCase();
-      for (const allergy of allergies) {
-        if (itemAllergens.includes(allergy)) {
-          return false;
-        }
+    // Hard filter: Allergies and Disliked foods / ingredients
+    if (allergies.length > 0 || dislikes.length > 0) {
+      const conflictCheck = isDishConflicting(item, allergies, dislikes);
+      if (conflictCheck.conflict) {
+        return false;
       }
     }
 

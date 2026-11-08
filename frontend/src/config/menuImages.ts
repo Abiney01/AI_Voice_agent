@@ -88,6 +88,9 @@ export const menuImages: Record<string, string> = {
   "paneer-quesadilla": "https://images.unsplash.com/photo-1618040996337-56904b7850b9?auto=format&fit=crop&w=400&q=80",
   "veg-fried-rice": "https://images.unsplash.com/photo-1603133872878-684f208fb84b?auto=format&fit=crop&w=400&q=80",
   "gobi-manchurian": "https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?auto=format&fit=crop&w=400&q=80",
+  "peanut-noodles": "https://images.unsplash.com/photo-1552611052-33e04de081de?auto=format&fit=crop&w=400&q=80",
+  "mushroom-fried-rice": "https://images.unsplash.com/photo-1603133872878-684f208fb84b?auto=format&fit=crop&w=400&q=80",
+  "garlic-butter-prawns": "https://images.unsplash.com/photo-1559742811-82286364ceaf?auto=format&fit=crop&w=400&q=80",
 
   // ── Beverages ──
   "mango-lassi": "https://images.unsplash.com/photo-1553530666-ba11a7da3888?auto=format&fit=crop&w=400&q=80",

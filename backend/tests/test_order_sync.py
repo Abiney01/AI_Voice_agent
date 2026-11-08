@@ -211,6 +211,8 @@ class TestOrderSync(unittest.IsolatedAsyncioTestCase):
 
     async def test_scenario_f_terminal_event_precedence(self):
         """Scenario F: Confirming order generates is_retryable=false, terminating the conversation."""
+        if not prisma.is_connected():
+            self.skipTest("Database not connected")
         customer_id = 1
         existing = await prisma.order.find_first(where={"customer_id": customer_id, "status": "active"})
         if existing:

@@ -6,8 +6,19 @@ from app.repositories.customer_repository import CustomerRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.menu_repository import MenuRepository
 from app.services.memory.memory_service import MemoryService
+from app.services.restrictions.allergy_validator import check_dish_conflict
 
 logger = logging.getLogger(__name__)
+
+
+def _split_pref(val) -> List[str]:
+    """Split comma-separated preference string or legacy repr format into cleaned tokens."""
+    if not val:
+        return []
+    text = str(val).strip()
+    if text.startswith('[') and text.endswith(']'):
+        text = text[1:-1]
+    return [s.strip().strip("'\"") for s in text.split(',') if s.strip().strip("'\"")]
 
 
 class RecommendationService:
@@ -17,9 +28,15 @@ class RecommendationService:
         self.menu_repo = MenuRepository()
         self.memory_svc = MemoryService()
 
-    async def get_recommendations(self, customer_id: int) -> List[Dict[str, Any]]:
+    async def get_recommendations(
+        self,
+        customer_id: int,
+        allergies: Optional[List[str]] = None,
+        dislikes: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Returns a prioritized list of recommendations following the 4-priority strategy.
+        Returns a prioritized list of recommendations following the 4-priority strategy,
+        strictly filtering out dishes conflicting with customer allergies and dislikes.
         """
         recommendations = []
         seen_ids = set()
@@ -28,8 +45,16 @@ class RecommendationService:
         if not customer:
             return []
 
+        eff_allergies = list(allergies or [])
+        eff_dislikes = list(dislikes or [])
+        if customer.preferences:
+            if not eff_allergies and customer.preferences.allergies:
+                eff_allergies.extend(_split_pref(customer.preferences.allergies))
+            if not eff_dislikes and customer.preferences.disliked_dishes:
+                eff_dislikes.extend(_split_pref(customer.preferences.disliked_dishes))
+
         # Priority 1: Personal Preferences / Favorites
-        p1 = await self._priority_1_personal(customer, seen_ids)
+        p1 = await self._priority_1_personal(customer, seen_ids, eff_allergies, eff_dislikes)
         if p1:
             recommendations.append({
                 "priority": 1,
@@ -40,7 +65,7 @@ class RecommendationService:
                 seen_ids.add(item["id"])
 
         # Priority 2: Frequently Ordered Items
-        p2 = await self._priority_2_frequent(customer_id, seen_ids)
+        p2 = await self._priority_2_frequent(customer_id, seen_ids, eff_allergies, eff_dislikes)
         if p2:
             recommendations.append({
                 "priority": 2,
@@ -51,7 +76,7 @@ class RecommendationService:
                 seen_ids.add(item["id"])
 
         # Priority 3: Frequently Bought Together
-        p3 = await self._priority_3_bought_together(customer_id, seen_ids)
+        p3 = await self._priority_3_bought_together(customer_id, seen_ids, eff_allergies, eff_dislikes)
         if p3:
             recommendations.append({
                 "priority": 3,
@@ -62,7 +87,7 @@ class RecommendationService:
                 seen_ids.add(item["id"])
 
         # Priority 4: Similar Customer Recommendations
-        p4 = await self._priority_4_similar_customers(customer_id, customer, seen_ids)
+        p4 = await self._priority_4_similar_customers(customer_id, customer, seen_ids, eff_allergies, eff_dislikes)
         if p4:
             recommendations.append({
                 "priority": 4,
@@ -75,7 +100,7 @@ class RecommendationService:
         # Insufficient history / New customer fallback: Recommend based on actual popular orders
         total_items_count = sum(len(r["items"]) for r in recommendations)
         if total_items_count < 3:
-            p_pop = await self._priority_popular(seen_ids, limit=max(3, 5 - total_items_count))
+            p_pop = await self._priority_popular(seen_ids, limit=max(3, 5 - total_items_count), allergies=eff_allergies, dislikes=eff_dislikes)
             if p_pop:
                 recommendations.append({
                     "priority": 5,
@@ -86,7 +111,11 @@ class RecommendationService:
         return recommendations
 
     async def _priority_1_personal(
-        self, customer: Customer, seen_ids: set
+        self,
+        customer: Customer,
+        seen_ids: set,
+        allergies: Optional[List[str]] = None,
+        dislikes: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Recommend from customer's favorite_dishes preference field."""
         prefs = customer.preferences
@@ -100,13 +129,20 @@ class RecommendationService:
                 continue
             item = await self.menu_repo.find_by_name(dish_name)
             if item and item.id not in seen_ids and item.is_available:
+                conflict, _ = check_dish_conflict(item, allergies or [], dislikes or [])
+                if conflict:
+                    continue
                 results.append(self._item_to_dict(item))
                 if len(results) >= 3:
                     break
         return results
 
     async def _priority_2_frequent(
-        self, customer_id: int, seen_ids: set
+        self,
+        customer_id: int,
+        seen_ids: set,
+        allergies: Optional[List[str]] = None,
+        dislikes: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Top ordered items by this customer."""
         rows = await prisma.query_raw(
@@ -129,11 +165,20 @@ class RecommendationService:
                 continue
             item = await self.menu_repo.get_by_id(menu_item_id)
             if item and item.is_available:
+                conflict, _ = check_dish_conflict(item, allergies or [], dislikes or [])
+                if conflict:
+                    continue
                 items.append(self._item_to_dict(item))
-        return items[:3]
+                if len(items) >= 3:
+                    break
+        return items
 
     async def _priority_3_bought_together(
-        self, customer_id: int, seen_ids: set
+        self,
+        customer_id: int,
+        seen_ids: set,
+        allergies: Optional[List[str]] = None,
+        dislikes: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Items frequently bought in the same orders as frequently ordered items."""
         # Get this customer's frequently ordered item IDs
@@ -188,11 +233,21 @@ class RecommendationService:
                 continue
             item = await self.menu_repo.get_by_id(menu_item_id)
             if item and item.is_available:
+                conflict, _ = check_dish_conflict(item, allergies or [], dislikes or [])
+                if conflict:
+                    continue
                 items.append(self._item_to_dict(item))
-        return items[:3]
+                if len(items) >= 3:
+                    break
+        return items
 
     async def _priority_4_similar_customers(
-        self, customer_id: int, customer: Customer, seen_ids: set
+        self,
+        customer_id: int,
+        customer: Customer,
+        seen_ids: set,
+        allergies: Optional[List[str]] = None,
+        dislikes: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Items ordered by customers with similar preferences."""
         prefs = customer.preferences
@@ -252,10 +307,21 @@ class RecommendationService:
                 continue
             item = await self.menu_repo.get_by_id(menu_item_id)
             if item and item.is_available:
+                conflict, _ = check_dish_conflict(item, allergies or [], dislikes or [])
+                if conflict:
+                    continue
                 items.append(self._item_to_dict(item))
-        return items[:3]
+                if len(items) >= 3:
+                    break
+        return items
 
-    async def _priority_popular(self, seen_ids: set, limit: int = 5) -> List[Dict[str, Any]]:
+    async def _priority_popular(
+        self,
+        seen_ids: set,
+        limit: int = 5,
+        allergies: Optional[List[str]] = None,
+        dislikes: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
         """Recommend popular dishes based on actual confirmed orders, or top signature dishes."""
         popular_ids = await self.order_repo.get_popular_menu_items(limit=10)
         results = []
@@ -264,6 +330,9 @@ class RecommendationService:
                 continue
             item = await self.menu_repo.get_by_id(mid)
             if item and item.is_available:
+                conflict, _ = check_dish_conflict(item, allergies or [], dislikes or [])
+                if conflict:
+                    continue
                 results.append(self._item_to_dict(item))
                 seen_ids.add(item.id)
                 if len(results) >= limit:
@@ -279,6 +348,9 @@ class RecommendationService:
                     break
                 item = await self.menu_repo.find_by_name(name)
                 if item and item.id not in seen_ids and item.is_available:
+                    conflict, _ = check_dish_conflict(item, allergies or [], dislikes or [])
+                    if conflict:
+                        continue
                     results.append(self._item_to_dict(item))
                     seen_ids.add(item.id)
 

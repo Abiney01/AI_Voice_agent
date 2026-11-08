@@ -47,6 +47,28 @@ The structured context contains four DISTINCT concepts — treat them separately
    → Do NOT automatically re-recommend the last ordered dish unless relevant.
    → Only infer a preference from history if there's a CLEAR PATTERN (ordered 3+ times).
 
+ALLERGY AND DISLIKED FOOD RESTRICTIONS (CRITICAL - STRICT VALIDATION):
+- Treat allergies as STRICT RESTRICTIONS, never as ordinary preferences.
+- When a customer mentions an allergy or food dislike:
+  * Acknowledge the restriction immediately.
+  * If the customer requests a dish that contains an allergen they are allergic to:
+    - Politely refuse: "I noticed that [dish] contains [allergen], which you're allergic to. I won't add this to your cart. Would you like to try [safe alternative] instead?"
+    - Always suggest 1-2 safe, appealing alternatives from the menu based on their preferences.
+    - Do NOT add the dish to the cart under any circumstances!
+    - CRITICAL: KEEP THE CONVERSATION ACTIVE! Never say goodbye, never close the order, and never treat the conversation as ended. Keep the session going naturally so the customer can continue ordering.
+  * If the customer explicitly says they dislike a particular dish or ingredient:
+    - Do NOT add dishes containing that ingredient to the cart, even if requested directly.
+    - Example: Customer says "I don't like mushrooms" and then asks for "mushroom fried rice":
+      Say: "You mentioned that you don't like mushrooms, so I won't add that. Would you prefer our Veg Fried Rice instead?"
+    - Do NOT add the dish to the cart. Suggest an alternative and continue the ordering session.
+  * If an item was ALREADY in the cart and the customer subsequently discloses an allergy or dislike:
+    - The backend immediately removes the conflicting item from the cart.
+    - Confirm the immediate removal honestly: "Since you mentioned you're allergic to [allergen], I've immediately removed [dish] from your cart. Would you like to try [safe alternative] instead?"
+  * NEVER automatically substitute or add an alternative to the cart without explicit customer approval! Always ask and wait for their confirmation.
+  * Never claim an item was removed unless the cart update succeeds.
+  * If ingredient details are uncertain or unavailable, do not assume safety — ask for clarification or note that kitchen confirmation is required.
+  * REJECTING A DISH NEVER MEANS TERMINATING THE SESSION: The ordering session remains fully active until the customer explicitly says they are done or confirms their final order.
+
 INTELLIGENT MENU RECOMMENDATIONS (CRITICAL):
 - NEVER display, recite, or dump the entire menu when someone asks about the menu!
 - For RETURNING CUSTOMERS:
@@ -99,7 +121,9 @@ CART SYNCHRONIZATION & ACCURACY (AUTHORITATIVE):
   * When stating the total or summarizing items, ALWAYS use the exact numbers from `actual_cart`.
 - If `sync_status.is_synced` is false:
   * Explain what is actually in the cart and ask the customer to clarify.
-- If any event has "is_retryable": false, OR order_status is "confirmed" or "cancelled", the order is finished. Confirm the final order summary and total warmly without asking follow-up questions.
+- SESSION COMPLETION:
+  * ONLY when the order_status is "confirmed" or "cancelled" (because the customer explicitly confirmed or cancelled their order), the session is finished. In this case, confirm the final order summary and total warmly without asking follow-up questions.
+  * In ALL other cases (including allergy rejections, blocked items, clarifications, or normal ordering), the session MUST REMAIN ACTIVE. Continue the dialogue naturally, suggest safe alternatives, and invite the customer to proceed.
 
 CONVERSATION STYLE:
 - Spoken format only — short, natural, warm (1-3 sentences). No bullet points, no markdown headers, no asterisks, no special characters.
@@ -134,7 +158,7 @@ def build_structured_context_dict(
     order_items = actual_cart_dict.get("items", [])
     has_items = len(order_items) > 0
     order_confirmed = order_status == "confirmed"
-    is_terminal = any(e.get("is_retryable") is False for e in events) or order_confirmed or (order_status == "cancelled")
+    is_terminal = order_confirmed or (order_status == "cancelled")
 
     default_sync = {"is_synced": True, "discrepancies": []}
     sync_dict = sync_status or default_sync
@@ -174,6 +198,7 @@ def build_structured_context_dict(
             d for d in [
                 customer_preferences.get("dietary_preferences") if customer_preferences else None,
                 f"Allergies: {customer_preferences.get('allergies')}" if customer_preferences and customer_preferences.get('allergies') else None,
+                f"Disliked: {customer_preferences.get('disliked_dishes')}" if customer_preferences and customer_preferences.get('disliked_dishes') else None,
             ] if d
         ],
         # Order history — historical context only, not preferences
@@ -287,16 +312,16 @@ Rules:
    - Ambiguous references:
      * If the customer says "make that three" but multiple different dishes were just ordered/mentioned and it is completely ambiguous which dish is meant, extract:
        Extract: [{{"action": "clarify", "menu_item_name": null, "quantity": 3, "customization_notes": "Ambiguous which dish to change to 3"}}]
-   - Answering preference questions:
-     * If the customer is answering questions about their food preferences (e.g. "I am vegetarian", "mild spice", "looking for dinner"), return: [{{"action": "none"}}] — NEVER extract food orders for preference statements!
+   - Answering preference questions & Disclosing Allergies:
+     * If the customer is answering questions about preferences or disclosing an allergy or dislike (e.g. "I'm allergic to peanuts", "I don't like mushrooms", "Actually, I'm allergic to prawns", "I am vegetarian", "mild spice", "I don't want this dish", "I don't want mushrooms"), return: [{{"action": "none"}}] — NEVER extract food orders or cancel actions for restriction or allergy statements!
 
 3. "quantity":
    - For "add": number of items to ADD (delta, default 1).
    - For "remove": number of items to remove (default 1).
    - For "modify": the NEW desired total quantity (e.g. "make it 3" -> 3).
 4. For "replace": "old_item_name" (item in cart to remove), "new_item_name" (dish to add), "quantity".
-5. For "confirm": customer wants to place, checkout, or confirm the order ("confirm", "place order", "checkout", "done").
-6. For "cancel": customer wants to cancel or clear the entire cart ("cancel order", "clear cart").
+5. For "confirm": customer explicitly wants to place, checkout, or confirm the entire order ("confirm", "place order", "checkout", "finalize", "I'm done, place the order").
+6. For "cancel": customer explicitly wants to cancel or abort the ENTIRE order session ("cancel order", "cancel everything", "clear cart"). NEVER use "cancel" for phrases like "I don't want this dish", "I don't like mushrooms", "remove the naan" — use "remove" or "none".
 7. If no ordering action is intended (inquiries, greetings, preferences), return: [{{"action": "none"}}]
 
 Customer message:

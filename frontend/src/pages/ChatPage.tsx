@@ -17,7 +17,7 @@ import {
 } from '../services/api';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import { getMenuItemImage } from '../config/menuImages';
-import { filterAndRankMenu, detectMealPeriod } from '../utils/menuFilter';
+import { filterAndRankMenu, detectMealPeriod, parsePreferencesList, isDishConflicting } from '../utils/menuFilter';
 import { getComplementaryPairings } from '../utils/pairingHelper';
 import './ChatPage.css';
 
@@ -240,6 +240,16 @@ export default function ChatPage() {
     }).slice(0, 5);
   }, [allMenuItems, activeMealPeriod, latestUserMsg, customer?.preferences, order?.items]);
 
+  // Active customer dietary restrictions
+  const customerAllergies = useMemo(
+    () => parsePreferencesList(customer?.preferences?.allergies),
+    [customer?.preferences?.allergies]
+  );
+  const customerDislikes = useMemo(
+    () => parsePreferencesList(customer?.preferences?.disliked_dishes),
+    [customer?.preferences?.disliked_dishes]
+  );
+
   // Dynamic Recommendations:
   // Shows exact LLM produced dishes once user asks for recommendations; falls back to frequently ordered initially
   const personalizedDishes = useMemo(() => {
@@ -249,10 +259,17 @@ export default function ChatPage() {
     return initialFrequentlyOrdered;
   }, [llmRecommendations, initialFrequentlyOrdered]);
 
-  // Natural Complementary Pairings based on cart items & highlighted dish
+  // Natural Complementary Pairings based on cart items & highlighted dish (filtered for allergies/dislikes)
   const complementaryPairings = useMemo(() => {
-    return getComplementaryPairings(order?.items || [], allMenuItems, selectedDish, 3);
-  }, [order?.items, allMenuItems, selectedDish]);
+    return getComplementaryPairings(
+      order?.items || [],
+      allMenuItems,
+      selectedDish,
+      3,
+      customerAllergies,
+      customerDislikes
+    );
+  }, [order?.items, allMenuItems, selectedDish, customerAllergies, customerDislikes]);
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || !customer || sessionEnded) return;
@@ -286,22 +303,40 @@ export default function ChatPage() {
         );
         newRecs = allMenuItems.filter(item => recNames.has(item.name.toLowerCase()));
       }
-      if (newRecs.length === 0 && response.message) {
+      // Refusal guard: Avoid recommending dishes that the assistant explicitly refused or flagged
+      const isRefusal = /\b(won'?t add|cannot add|can'?t add|allergic|allergy|dislike)\b/i.test(response.message || '');
+      if (newRecs.length === 0 && response.message && !isRefusal) {
         newRecs = extractDishesFromText(response.message, allMenuItems);
       }
+      // Filter out any recommended dishes that violate allergies or dislikes
+      newRecs = newRecs.filter(dish => !isDishConflicting(dish, customerAllergies, customerDislikes).conflict);
+
       if (newRecs.length > 0) {
         setLlmRecommendations(newRecs.slice(0, 5));
       }
 
-      const hasTerminalEvent =
-        response.events?.some(e => e.is_retryable === false) ||
-        response.order_actions?.some(a => a.is_retryable === false);
+      // Refresh customer profile if restrictions were disclosed or updated mid-session
+      const hasRestrictionEvent = response.events?.some((e: any) =>
+        e.type?.startsWith('item_blocked_') ||
+        e.type?.startsWith('item_removed_') ||
+        e.type?.includes('conflict')
+      );
+      if (hasRestrictionEvent && customer) {
+        getCustomerProfile(customer.id).then(setCustomer).catch(() => {});
+      }
 
+      // Session termination rule: ONLY terminate the ordering session when the customer
+      // explicitly completes (confirms) or cancels the entire order.
+      // Allergy rejections, dietary blocks, clarifications, and cart operations NEVER end the session.
       const orderConfirmedOrCancelled = response.updated_order
-        ? response.updated_order.status !== 'active'
+        ? response.updated_order.status === 'confirmed' || response.updated_order.status === 'cancelled'
         : false;
 
-      const isTerminal = hasTerminalEvent || orderConfirmedOrCancelled;
+      const hasExplicitEndEvent = response.events?.some(
+        e => e.type === 'order_confirmed' || e.type === 'order_cancelled'
+      );
+
+      const isTerminal = orderConfirmedOrCancelled && hasExplicitEndEvent;
 
       if (response.updated_order) {
         setOrder(response.updated_order as Order);
@@ -403,20 +438,35 @@ export default function ChatPage() {
     navigate('/');
   };
 
-  // Quick direct add from UI / Pairings
+  // Quick direct add from UI / Pairings with strict dietary validation
   const handleQuickAdd = async (item: MenuItem) => {
     if (!customer) return;
+
+    // Strict dietary restriction check before calling backend API
+    const conflictCheck = isDishConflicting(item, customerAllergies, customerDislikes);
+    if (conflictCheck.conflict) {
+      if (conflictCheck.reason === 'allergy') {
+        showToast(`Cannot add ${item.name}: violates known allergy (${conflictCheck.conflictItem})`, 'error');
+      } else {
+        showToast(`Cannot add ${item.name}: contains disliked ingredient (${conflictCheck.conflictItem})`, 'error');
+      }
+      return;
+    }
+
     try {
       let currentOrder = orderRef.current;
       if (!currentOrder || currentOrder.status !== 'active') {
+        const confirmed = window.confirm('Your previous order is closed. Start a new order?');
+        if (!confirmed) return;
         currentOrder = await getOrCreateOrder(customer.id);
         setOrder(currentOrder);
       }
       const updated = await addOrderItem(currentOrder.id, item.id, 1);
       setOrder(updated);
       showToast(`Added ${item.name} to order`, 'success');
-    } catch {
-      showToast('Could not add item to order', 'error');
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.detail || 'Could not add item to order';
+      showToast(errMsg, 'error');
     }
   };
 

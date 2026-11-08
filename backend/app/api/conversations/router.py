@@ -18,7 +18,13 @@ from app.schemas.conversation import (
     OrderDiscrepancy,
     OrderSyncStatus,
 )
+from app.schemas.customer import CustomerPreferencesUpdate
 from app.schemas.order import OrderItemAdd
+from app.services.restrictions.allergy_validator import (
+    check_dish_conflict,
+    extract_restrictions_from_text,
+    scan_and_remove_cart_conflicts,
+)
 from app.services.openai.conversation_service import ConversationService
 from app.services.openai.prompts import build_structured_context_dict
 from app.services.guardrails.domain_guard import check_guardrails
@@ -34,6 +40,23 @@ class SessionEndRequest(BaseModel):
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+
+def _split_pref(val) -> List[str]:
+    """Split a comma-separated preference string (or Python-repr list string) into tokens.
+
+    Handles:
+    - None / ''              → []
+    - 'peanut, shellfish'    → ['peanut', 'shellfish']
+    - "['peanut', 'nut']"   → ['peanut', 'nut']   (Python-repr artefact from old bug)
+    """
+    if not val:
+        return []
+    text = str(val).strip()
+    # Strip Python list repr brackets produced by the old str(list) serialisation bug
+    if text.startswith('[') and text.endswith(']'):
+        text = text[1:-1]
+    return [s.strip().strip("'\"") for s in text.split(',') if s.strip().strip("'\"")]
 
 # ─── Menu Cache ───────────────────────────────────────────────────────────────
 # The full menu is fetched on every chat turn without caching.
@@ -351,16 +374,16 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # ── Build customer context ───────────────────────────────────────────────
+    # ── Build customer context & dietary restrictions ─────────────────────────
     prefs = None
     if customer.preferences:
         p = customer.preferences
         prefs = {
             "spice_level": p.spice_level,
             "dietary_preferences": p.dietary_preferences,
-            "allergies": p.allergies,
+            "allergies": _split_pref(p.allergies),
             "favorite_dishes": p.favorite_dishes,
-            "disliked_dishes": p.disliked_dishes,
+            "disliked_dishes": _split_pref(p.disliked_dishes),
         }
 
     # Enforce server-side history limit to prevent token overflow
@@ -368,6 +391,49 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         m.model_dump()
         for m in chat_request.conversation_history[-_MAX_HISTORY_TURNS:]
     ]
+
+    # Maintain customer allergies and dislikes throughout conversation
+    active_allergies: set = set(_split_pref(prefs.get("allergies")) if prefs and prefs.get("allergies") else [])
+    active_dislikes: set = set(_split_pref(prefs.get("disliked_dishes")) if prefs and prefs.get("disliked_dishes") else [])
+
+    # Check conversation history for previously disclosed allergies/dislikes in this session
+    for msg in history:
+        if msg.get("role") == "user":
+            h_allergies, h_dislikes = extract_restrictions_from_text(msg.get("content", ""))
+            active_allergies.update(h_allergies)
+            active_dislikes.update(h_dislikes)
+
+    # Check current user message for newly disclosed restrictions
+    new_allergies, new_dislikes = extract_restrictions_from_text(clean_message)
+    new_restriction_found = False
+    for a in new_allergies:
+        if a not in active_allergies:
+            active_allergies.add(a)
+            new_restriction_found = True
+    for d in new_dislikes:
+        if d not in active_dislikes:
+            active_dislikes.add(d)
+            new_restriction_found = True
+
+    # Persist updated restrictions immediately so subsequent turns and order modifications maintain them
+    if new_restriction_found:
+        try:
+            pref_update = CustomerPreferencesUpdate(
+                allergies=", ".join(sorted(active_allergies)) if active_allergies else None,
+                disliked_dishes=", ".join(sorted(active_dislikes)) if active_dislikes else None,
+            )
+            await customer_repo.update_preferences(chat_request.customer_id, pref_update)
+            logger.info(
+                "[CHAT] Persisted updated restrictions for customer #%s: allergies=%s, dislikes=%s",
+                chat_request.customer_id, list(active_allergies), list(active_dislikes)
+            )
+        except Exception as e:
+            logger.warning("[CHAT] Could not persist preferences update: %s", e)
+
+    if prefs is None:
+        prefs = {}
+    prefs["allergies"] = list(active_allergies)
+    prefs["disliked_dishes"] = list(active_dislikes)
 
     # ── Disconnect check ─────────────────────────────────────────────────────
     if await request.is_disconnected():
@@ -460,6 +526,43 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
                 r["menu_item_name"] = menu_item_cache[item_n].name
         resolved_raw_actions.append(r)
 
+    # ── Retroactive cart conflict scan & removal ──────────────────────────────
+    # If customer has active or newly mentioned allergies/dislikes, scan active cart
+    # and immediately remove any violating dishes before new operations.
+    if (active_allergies or active_dislikes) and order and getattr(order, "items", None):
+        removed_conflicts = await scan_and_remove_cart_conflicts(
+            order=order,
+            allergies=list(active_allergies),
+            dislikes=list(active_dislikes),
+            order_svc=order_svc,
+        )
+        if removed_conflicts:
+            order = await order_svc.get_order(order.id)
+            for rec in removed_conflicts:
+                conflict_reason = rec["type"]
+                oa = OrderAction(
+                    action="remove",
+                    menu_item_name=rec["item_name"],
+                    status=f"removed_{conflict_reason}_conflict",
+                    is_retryable=True,
+                )
+                order_actions.append(oa)
+                applied_actions.append(oa)
+                events.append(ConversationEvent(
+                    type=f"item_removed_{conflict_reason}_conflict",
+                    status="removed_conflict",
+                    is_retryable=True,
+                    details={
+                        "item_name": rec["item_name"],
+                        "conflict_type": conflict_reason,
+                        "ingredient": rec["ingredient"],
+                    },
+                ))
+            logger.info(
+                "[CHAT] Removed conflicting items from active order #%s: %s",
+                order.id, [r["item_name"] for r in removed_conflicts]
+            )
+
     # base_order_dict captured here as the pre-operation snapshot;
     # llm_order is computed AFTER the action loop + DB reload (see below)
     # so the comparison is between confirmed post-op cart and expected intent.
@@ -492,6 +595,39 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         try:
             if action == "add":
                 if menu_item:
+                    # Validate against allergies, dislikes, and uncertain ingredients
+                    conflict_type, conflict_ing = check_dish_conflict(
+                        menu_item=menu_item,
+                        allergies=list(active_allergies),
+                        dislikes=list(active_dislikes),
+                    )
+                    if conflict_type:
+                        logger.warning(
+                            "[CHAT] Blocked ADD of '%s' due to %s on '%s'",
+                            menu_item.name, conflict_type, conflict_ing
+                        )
+                        oa = OrderAction(
+                            action="add",
+                            menu_item_name=menu_item.name,
+                            menu_item_id=menu_item.id,
+                            quantity=raw.get("quantity", 1),
+                            customization_notes=raw.get("customization_notes"),
+                            status=f"blocked_{conflict_type}",
+                            is_retryable=True,
+                        )
+                        order_actions.append(oa)
+                        events.append(ConversationEvent(
+                            type=f"item_blocked_{conflict_type}",
+                            status=f"blocked_{conflict_type}",
+                            is_retryable=True,
+                            details={
+                                "item_name": menu_item.name,
+                                "conflict_type": conflict_type,
+                                "ingredient": conflict_ing,
+                            },
+                        ))
+                        continue
+
                     oa = OrderAction(
                         action="add",
                         menu_item_name=menu_item.name,
@@ -635,6 +771,31 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
                     ))
                     logger.info("[CHAT] Modified '%s' quantity to %s (notes=%s) in order #%s", oa.menu_item_name, target_qty, notes, order.id)
                 elif menu_item:
+                    # Validate against allergies/dislikes before adding
+                    conflict_type, conflict_ing = check_dish_conflict(
+                        menu_item=menu_item,
+                        allergies=list(active_allergies),
+                        dislikes=list(active_dislikes),
+                    )
+                    if conflict_type:
+                        oa = OrderAction(
+                            action="modify",
+                            menu_item_name=menu_item.name,
+                            menu_item_id=menu_item.id,
+                            quantity=target_qty,
+                            customization_notes=notes,
+                            status=f"blocked_{conflict_type}",
+                            is_retryable=True,
+                        )
+                        order_actions.append(oa)
+                        events.append(ConversationEvent(
+                            type=f"item_blocked_{conflict_type}",
+                            status=f"blocked_{conflict_type}",
+                            is_retryable=True,
+                            details={"item_name": menu_item.name, "conflict_type": conflict_type, "ingredient": conflict_ing},
+                        ))
+                        continue
+
                     # If customer wanted to modify an item that wasn't yet in cart, add it seamlessly
                     if target_qty is None:
                         target_qty = 1
@@ -703,6 +864,39 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
                 new_name = raw.get("new_item_name", "")
                 old_menu_item = menu_item_cache.get(old_name) if old_name else None
                 new_menu_item = menu_item_cache.get(new_name) if new_name else None
+
+                if new_menu_item:
+                    # Validate replacement dish against allergies and dislikes
+                    conflict_type, conflict_ing = check_dish_conflict(
+                        menu_item=new_menu_item,
+                        allergies=list(active_allergies),
+                        dislikes=list(active_dislikes),
+                    )
+                    if conflict_type:
+                        logger.warning(
+                            "[CHAT] Blocked REPLACE of '%s' due to %s on '%s'",
+                            new_menu_item.name, conflict_type, conflict_ing
+                        )
+                        oa = OrderAction(
+                            action="replace",
+                            menu_item_name=new_menu_item.name,
+                            menu_item_id=new_menu_item.id,
+                            quantity=raw.get("quantity", 1),
+                            status=f"blocked_{conflict_type}",
+                            is_retryable=True,
+                        )
+                        order_actions.append(oa)
+                        events.append(ConversationEvent(
+                            type=f"item_blocked_{conflict_type}",
+                            status=f"blocked_{conflict_type}",
+                            is_retryable=True,
+                            details={
+                                "item_name": new_menu_item.name,
+                                "conflict_type": conflict_type,
+                                "ingredient": conflict_ing,
+                            },
+                        ))
+                        continue
 
                 order = await order_svc.get_order(order.id)
                 old_order_item = None
@@ -842,7 +1036,21 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
     # base_order_dict is the pre-op prefetch snapshot; resolved_raw_actions carries
     # the canonically-named intent. Comparing against the fresh cart (updated_order_dict)
     # ensures discrepancies reflect actual post-operation divergence, not pre-op state.
-    llm_order = compute_llm_expected_order(base_order_dict, resolved_raw_actions)
+    #
+    # RC-8 fix: exclude blocked actions from the expected-order computation so that
+    # items that were intentionally refused (allergy/dislike) do not appear as
+    # false "expected but missing" discrepancies that confuse the LLM.
+    blocked_item_names: set = {
+        e.details.get("item_name", "")
+        for e in events
+        if e.type.startswith("item_blocked_") and e.details
+    }
+    successful_raw_actions = [
+        r for r in resolved_raw_actions
+        if r.get("menu_item_name") not in blocked_item_names
+        and r.get("new_item_name") not in blocked_item_names
+    ]
+    llm_order = compute_llm_expected_order(base_order_dict, successful_raw_actions)
 
     # ── Validate order synchronization against actual cart (SOURCE OF TRUTH) ─
     sync_status = validate_order_sync(llm_order, updated_order_dict)
@@ -886,7 +1094,11 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
 
     # ── Fetch recommendations (3-5 items) ────────────────────────────────────
     rec_svc = RecommendationService()
-    recommended_groups = await rec_svc.get_recommendations(chat_request.customer_id)
+    recommended_groups = await rec_svc.get_recommendations(
+        chat_request.customer_id,
+        allergies=list(active_allergies),
+        dislikes=list(active_dislikes),
+    )
     recommended_picks = []
     seen_rec_ids = set()
     for g in recommended_groups:
@@ -950,14 +1162,6 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         if "?" not in ai_response and "which" not in ai_response.lower() and "clarify" not in ai_response.lower():
             ai_response = "Could you please clarify which dish you would like to update?"
 
-    failed_items = [
-        ev.details.get("item_name", "") for ev in events
-        if ev.type in ("item_add_failed", "item_remove_failed", "item_modify_failed") and ev.details
-    ]
-    confirmed_clean_names = {
-        clean_dish_name(it.get("menu_item_name", ""))
-        for it in updated_order_dict.get("items", [])
-    }
     response_lower = ai_response.lower()
     false_success_phrases = (
         "added", "adding", "got you", "put in", "placed", "included", "ordered", "here's your"
@@ -967,6 +1171,84 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         "not on the menu", "not in the cart", "couldn't add",
         "cannot add", "wasn't able", "unable to"
     )
+
+    # 1. Enforce allergy block communication & prevent false success
+    blocked_allergy_events = [ev for ev in events if ev.type == "item_blocked_allergy"]
+    for ev in blocked_allergy_events:
+        dish_name = ev.details.get("item_name", "this dish")
+        allergen = ev.details.get("ingredient", "an allergen")
+        clean_d = clean_dish_name(dish_name)
+        false_claim = any(p in response_lower and clean_d in response_lower for p in false_success_phrases)
+        lacks_explanation = not any(w in response_lower for w in ("allergic", "allergy", "allergies", "won't add", "cannot add", "not adding", "blocked"))
+        if false_claim or lacks_explanation:
+            logger.warning("[CHAT] Overriding LLM response to ensure allergy block is communicated for '%s'", dish_name)
+            ai_response = (
+                f"I noticed that {dish_name} contains an ingredient you're allergic to ({allergen}). "
+                f"I won't add this to your cart. Would you like to try something else?"
+            )
+            response_lower = ai_response.lower()
+            break
+
+    # 2. Enforce dislike refusal communication & prevent false success
+    blocked_dislike_events = [ev for ev in events if ev.type == "item_blocked_dislike"]
+    for ev in blocked_dislike_events:
+        dish_name = ev.details.get("item_name", "this dish")
+        disliked_item = ev.details.get("ingredient", "that ingredient")
+        clean_d = clean_dish_name(dish_name)
+        false_claim = any(p in response_lower and clean_d in response_lower for p in false_success_phrases)
+        lacks_explanation = not any(w in response_lower for w in ("dislike", "don't like", "dont like", "prefer", "won't add", "cannot add", "not adding"))
+        if false_claim or lacks_explanation:
+            logger.warning("[CHAT] Overriding LLM response to ensure dislike refusal is communicated for '%s'", dish_name)
+            ai_response = (
+                f"You mentioned that you don't like {disliked_item}. "
+                f"I haven't added {dish_name} to your cart. Would you prefer another option?"
+            )
+            response_lower = ai_response.lower()
+            break
+
+    # 3. Enforce uncertain ingredient verification
+    blocked_uncertain_events = [ev for ev in events if ev.type == "item_blocked_uncertain_ingredient"]
+    for ev in blocked_uncertain_events:
+        dish_name = ev.details.get("item_name", "this dish")
+        lacks_explanation = not any(w in response_lower for w in ("confirm", "kitchen", "clarif", "check with", "uncertain"))
+        if lacks_explanation:
+            ai_response = (
+                f"Because of your allergy, I want to verify the exact ingredients in {dish_name} with our kitchen "
+                f"before adding it. Would you like me to check with them, or would you prefer a dish with confirmed allergen details?"
+            )
+            response_lower = ai_response.lower()
+            break
+
+    # 4. Enforce retroactive conflict removal communication
+    removed_conflict_events = [ev for ev in events if ev.type in ("item_removed_allergy_conflict", "item_removed_dislike_conflict")]
+    for ev in removed_conflict_events:
+        dish_name = ev.details.get("item_name", "an item")
+        c_type = ev.details.get("conflict_type", "allergy")
+        ing = ev.details.get("ingredient", "an ingredient")
+        lacks_explanation = not any(w in response_lower for w in ("remov", "taken off", "took off", "deleted"))
+        if lacks_explanation:
+            logger.warning("[CHAT] Overriding LLM response to inform of retroactive cart removal for '%s'", dish_name)
+            if c_type == "allergy":
+                ai_response = (
+                    f"I noticed that {dish_name} in your cart contains an ingredient you're allergic to ({ing}). "
+                    f"I have immediately removed it from your cart. Would you like a safer alternative?"
+                )
+            else:
+                ai_response = (
+                    f"Since you mentioned you don't like {ing}, I have removed {dish_name} from your cart. "
+                    f"Would you like to try something else?"
+                )
+            response_lower = ai_response.lower()
+            break
+
+    failed_items = [
+        ev.details.get("item_name", "") for ev in events
+        if ev.type in ("item_add_failed", "item_remove_failed", "item_modify_failed") and ev.details
+    ]
+    confirmed_clean_names = {
+        clean_dish_name(it.get("menu_item_name", ""))
+        for it in updated_order_dict.get("items", [])
+    }
 
     for failed_name in failed_items:
         clean_f = clean_dish_name(failed_name)
@@ -1018,6 +1300,12 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         sorted_names = sorted(menu_item_names, key=len, reverse=True)
         for d_name in sorted_names:
             if re.search(r'\b' + re.escape(d_name) + r'\b', ai_response, re.IGNORECASE):
+                # Filter out any dishes violating active customer allergies or dislikes
+                m_item = menu_item_cache.get(d_name)
+                if m_item:
+                    c_type, _ = check_dish_conflict(m_item, list(active_allergies), list(active_dislikes))
+                    if c_type:
+                        continue
                 if d_name.lower() not in rec_seen:
                     rec_seen.add(d_name.lower())
                     llm_recommendations.append({"name": d_name})
