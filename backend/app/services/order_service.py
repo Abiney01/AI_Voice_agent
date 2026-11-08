@@ -67,5 +67,23 @@ class OrderService:
         await self.order_repo.update_item_quantity(order_id, order_item_id, quantity)
         return await self.order_repo.get_by_id(order_id)
 
+    async def update_item(
+        self,
+        order_id: int,
+        order_item_id: int,
+        quantity: Optional[int] = None,
+        customization_notes: Optional[str] = None,
+    ) -> Order:
+        order = await self.get_order(order_id)
+        if order.status != "active":
+            raise HTTPException(status_code=400, detail="Cannot modify a confirmed or cancelled order")
+        await self.order_repo.update_item(
+            order_id=order_id,
+            order_item_id=order_item_id,
+            quantity=quantity,
+            customization_notes=customization_notes,
+        )
+        return await self.order_repo.get_by_id(order_id)
+
     async def get_customer_history(self, customer_id: int, limit: int = 5):
         return await self.order_repo.get_customer_orders(customer_id, limit)

@@ -192,6 +192,7 @@ class ConversationService:
         message: str,
         current_order_summary: str = "Empty (nothing ordered yet)",
         last_assistant_message: str = "",
+        conversation_history: Optional[List[Dict[str, str]]] = None,
         available_menu_items: str = "",
     ) -> List[Dict[str, Any]]:
         """
@@ -200,6 +201,7 @@ class ConversationService:
         available_menu_items: comma-separated or newline-separated dish names from the menu.
         current_order_summary: compact text description of what's already in the cart.
         last_assistant_message: what the AI spoke in previous turn.
+        conversation_history: recent multi-turn messages for resolving relative references.
         """
         # Escape any stray braces in the user message before injecting into the template.
         safe_message = message.replace("{", "{{").replace("}", "}}")
@@ -207,10 +209,19 @@ class ConversationService:
         safe_last_assistant = last_assistant_message.replace("{", "{{").replace("}", "}}")
         safe_menu_items = available_menu_items.replace("{", "{{").replace("}", "}}")
 
+        recent_lines = []
+        if conversation_history:
+            for m in conversation_history[-6:]:
+                role = "Customer" if m.get("role") == "user" else "Diaa"
+                c = m.get("content", "").replace("{", "{{").replace("}", "}}")
+                recent_lines.append(f"{role}: {c}")
+        safe_recent_convo = "\n".join(recent_lines) if recent_lines else "None"
+
         prompt = ORDER_EXTRACTION_PROMPT.format(
             available_menu_items=safe_menu_items,
             message=safe_message,
             current_order=safe_order,
+            recent_conversation=safe_recent_convo,
             last_assistant_message=safe_last_assistant,
         )
         text = ""

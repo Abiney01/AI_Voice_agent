@@ -169,6 +169,9 @@ def _build_order_summary(order) -> str:
     return "\n".join(lines)
 
 
+from app.services.recommendations.recommendation_service import RecommendationService
+
+
 # ─── Order Intent Detection ───────────────────────────────────────────────────
 
 _AFFIRMATIVE_RE = re.compile(
@@ -177,17 +180,24 @@ _AFFIRMATIVE_RE = re.compile(
 )
 
 _ORDER_INTENT_RE = re.compile(
-    r"\b(add|order|place|finish|finalize|done|pay|complete|checkout|bill|"
-    r"remove|delete|cancel|confirm|"
-    r"give\s+me|get\s+me|bring\s+me|make\s+it|make\s+that|"
-    r"change|modify|update|replace|swap|take\s+away|drop|"
-    r"more|less|another|extra|quantity|minus|plus|"
-    r"skip|scratch|don'?t\s+want|leave\s+(off|out)|without|"
-    r"i('d|\s+would|\s+will)?\s+like|i('ll|\s+will)\s+(take|have|get)|"
-    r"can\s+i\s+(have|get)|put\s+in|throw\s+in|include|exclude|"
+    r"\b("
+    r"add|order|place|finish|finalize|done|pay|complete|checkout|bill|"
+    r"remove|delete|cancel|confirm|clear|drop|scratch|skip|take\s+away|take\s+off|"
+    r"give\s+(me|us)|get\s+(me|us)|bring\s+(me|us)|make\s+it|make\s+that|make\s+this|"
+    r"change|modify|update|replace|swap|switch|"
+    r"more|less|another|extra|quantity|minus|plus|instead|"
+    r"don'?t\s+want|leave\s+(off|out)|without|no\s+(onions?|ice|sugar|spice|dairy)|"
+    r"i('d|\s+would|\s+will)?\s+(like|want|need)|i('ll|\s+will)\s+(take|have|get)|"
+    r"we('d|\s+would|\s+will)?\s+(like|want|need)|we('ll|\s+will)\s+(take|have|get)|"
+    r"can\s+(i|we)\s+(have|get|order)|could\s+(i|we)\s+(have|get)|let('s|\s+us)\s+(do|get|have|order)|"
+    r"put\s+in|throw\s+in|include|exclude|"
+    r"(one|two|three|four|five|six|seven|eight|nine|ten|[1-9][0-9]?)\s+(more|plate|plates|portion|portions|pcs|pieces)?|"
+    r"actually\s+(make|change|add|put|two|three|four|five|one|[1-9][0-9]?)|"
     r"biryani|rice|coke|milkshake|burger|fries|naan|dal|paneer|chicken|"
     r"mutton|samosa|lassi|tea|chai|pizza|steak|wings|rings|salad|brownie|"
-    r"cheesecake|lemonade|jamun|kheer|roti|paratha|curry|masala|tikka|raita|papad|sandwich|coleslaw|bites|pork|platter|beer|sundae)\b",
+    r"cheesecake|lemonade|jamun|kheer|roti|paratha|curry|masala|tikka|raita|papad|sandwich|coleslaw|bites|pork|platter|beer|sundae|"
+    r"manchurian|gobi|dosa|idli|vada|pongal|upma|poha|pancakes?|waffles?|omelette|wrap|quesadilla"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -211,6 +221,10 @@ def _has_order_intent(message: str, last_assistant_msg: str = "", menu_dish_name
             clean_dish = dish.lower().split("(")[0].strip()
             if len(clean_dish) > 3 and clean_dish in msg_lower:
                 return True
+
+    # 4. Modification / relative reference patterns
+    if re.search(r"\b(make\s+(it|that|this)|actually\s+make|actually\s+\d+|change\s+(it|that|to)|remove|take\s+off)\b", message, re.IGNORECASE):
+        return True
 
     return False
 
@@ -388,6 +402,7 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
                 message=clean_message,
                 current_order_summary=order_summary,
                 last_assistant_message=last_assistant_msg,
+                conversation_history=history,
                 available_menu_items=menu_dish_names,
             )
             logger.debug("[PERF] Order extraction fired (intent detected)")
@@ -523,14 +538,17 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
             elif action == "remove":
                 order = await order_svc.get_order(order.id)
                 matching_item = None
+                clean_target = clean_dish_name(item_name) if item_name else ""
                 if order.items:
                     for item in order.items:
                         if menu_item and item.menu_item_id == menu_item.id:
                             matching_item = item
                             break
-                        elif item_name and item.menu_item and item.menu_item.name.lower() == item_name.lower():
-                            matching_item = item
-                            break
+                        elif clean_target and item.menu_item:
+                            clean_cart_name = clean_dish_name(item.menu_item.name)
+                            if clean_cart_name == clean_target or clean_target in clean_cart_name or clean_cart_name in clean_target:
+                                matching_item = item
+                                break
                 if matching_item:
                     oa = OrderAction(
                         action="remove",
@@ -570,34 +588,82 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
             elif action == "modify":
                 order = await order_svc.get_order(order.id)
                 matching_item = None
+                clean_target = clean_dish_name(item_name) if item_name else ""
                 if order.items:
                     for item in order.items:
                         if menu_item and item.menu_item_id == menu_item.id:
                             matching_item = item
                             break
-                        elif item_name and item.menu_item and item.menu_item.name.lower() == item_name.lower():
-                            matching_item = item
-                            break
+                        elif clean_target and item.menu_item:
+                            clean_cart_name = clean_dish_name(item.menu_item.name)
+                            if clean_cart_name == clean_target or clean_target in clean_cart_name or clean_cart_name in clean_target:
+                                matching_item = item
+                                break
+
+                target_qty = raw.get("quantity")
+                notes = raw.get("customization_notes")
+
                 if matching_item:
-                    target_qty = raw.get("quantity", 1)
+                    if target_qty is None:
+                        target_qty = matching_item.quantity
                     oa = OrderAction(
                         action="modify",
                         menu_item_name=matching_item.menu_item.name if matching_item.menu_item else item_name,
                         menu_item_id=matching_item.menu_item_id,
                         quantity=target_qty,
+                        customization_notes=notes,
                         status="success",
                         is_retryable=True,
                     )
-                    await order_svc.update_item_quantity(order.id, matching_item.id, target_qty)
+                    await order_svc.update_item(
+                        order.id,
+                        matching_item.id,
+                        quantity=target_qty,
+                        customization_notes=notes,
+                    )
                     order_actions.append(oa)
                     applied_actions.append(oa)
                     events.append(ConversationEvent(
                         type="item_modified",
                         status="success",
                         is_retryable=True,
-                        details={"item_name": oa.menu_item_name, "quantity": target_qty},
+                        details={
+                            "item_name": oa.menu_item_name,
+                            "quantity": target_qty,
+                            "customization_notes": notes,
+                        },
                     ))
-                    logger.info("[CHAT] Modified '%s' quantity to %s in order #%s", oa.menu_item_name, target_qty, order.id)
+                    logger.info("[CHAT] Modified '%s' quantity to %s (notes=%s) in order #%s", oa.menu_item_name, target_qty, notes, order.id)
+                elif menu_item:
+                    # If customer wanted to modify an item that wasn't yet in cart, add it seamlessly
+                    if target_qty is None:
+                        target_qty = 1
+                    oa = OrderAction(
+                        action="modify",
+                        menu_item_name=menu_item.name,
+                        menu_item_id=menu_item.id,
+                        quantity=target_qty,
+                        customization_notes=notes,
+                        status="success",
+                        is_retryable=True,
+                    )
+                    await order_svc.add_item(
+                        order.id,
+                        OrderItemAdd(
+                            menu_item_id=menu_item.id,
+                            quantity=oa.quantity,
+                            customization_notes=oa.customization_notes,
+                        ),
+                    )
+                    order_actions.append(oa)
+                    applied_actions.append(oa)
+                    events.append(ConversationEvent(
+                        type="item_added",
+                        status="success",
+                        is_retryable=True,
+                        details={"item_name": menu_item.name, "quantity": oa.quantity},
+                    ))
+                    logger.info("[CHAT] Modified/added '%s' quantity to %s in order #%s", menu_item.name, target_qty, order.id)
                 else:
                     oa = OrderAction(
                         action="modify",
@@ -613,7 +679,24 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
                         is_retryable=True,
                         details={"item_name": item_name},
                     ))
-                    logger.warning("[CHAT] Skipped MODIFY — item '%s' not in order", item_name)
+                    logger.warning("[CHAT] Skipped MODIFY — item '%s' not in order or menu", item_name)
+
+            elif action == "clarify":
+                oa = OrderAction(
+                    action="clarify",
+                    menu_item_name=raw.get("menu_item_name"),
+                    quantity=raw.get("quantity", 1),
+                    customization_notes=raw.get("customization_notes"),
+                    status="needs_clarification",
+                    is_retryable=True,
+                )
+                order_actions.append(oa)
+                events.append(ConversationEvent(
+                    type="order_clarification_needed",
+                    status="needs_clarification",
+                    is_retryable=True,
+                    details={"message": raw.get("customization_notes") or "Please clarify which dish you'd like to update."},
+                ))
 
             elif action == "replace":
                 old_name = raw.get("old_item_name", "")
@@ -801,6 +884,23 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
     else:
         user_intent = "inquiry"
 
+    # ── Fetch recommendations (3-5 items) ────────────────────────────────────
+    rec_svc = RecommendationService()
+    recommended_groups = await rec_svc.get_recommendations(chat_request.customer_id)
+    recommended_picks = []
+    seen_rec_ids = set()
+    for g in recommended_groups:
+        for it in g.get("items", []):
+            if it["id"] not in seen_rec_ids:
+                seen_rec_ids.add(it["id"])
+                recommended_picks.append(it)
+                if len(recommended_picks) >= 5:
+                    break
+        if len(recommended_picks) >= 5:
+            break
+
+    is_returning_customer = bool(past_orders) or bool(prefs)
+
     # ── Build unified structured context JSON ────────────────────────────────
     meal_period = _get_meal_period()
     order_history_summary = _build_order_history_summary(past_orders)
@@ -819,6 +919,9 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         instruction=sync_instruction,
         meal_period=meal_period,
         order_history=order_history_summary,
+        applied_cart_actions=[a.model_dump() for a in applied_actions],
+        recommended_picks=recommended_picks,
+        is_returning=is_returning_customer,
     )
 
     # ── Disconnect check before chat LLM call ────────────────────────────────
@@ -841,51 +944,53 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
         structured_context=structured_context,
     )
 
-    # ── Guard against false success: event-driven, not regex-based ───────────
-    # Events are already ground truth (generated by the action loop from DB outcomes).
-    # Parsing LLM free-text with regex is fragile and misses verb variations.
-    # Instead: find items that failed to add, check if LLM falsely claimed success,
-    # and override with an honest, accurate message derived from the event context.
-    failed_add_items: List[str] = []
-    for ev in events:
-        if ev.type == "item_add_failed" and ev.details:
-            name = ev.details.get("item_name", "")
-            if name:
-                failed_add_items.append(name)
+    # ── Guard against false success & verify cart operations ─────────────────
+    clarify_ev = next((ev for ev in events if ev.type == "order_clarification_needed"), None)
+    if clarify_ev and not applied_actions:
+        if "?" not in ai_response and "which" not in ai_response.lower() and "clarify" not in ai_response.lower():
+            ai_response = "Could you please clarify which dish you would like to update?"
 
-    if failed_add_items:
-        confirmed_item_names = {
-            it.get("menu_item_name", "").lower()
-            for it in updated_order_dict.get("items", [])
-        }
-        false_success_phrases = (
-            "added", "adding", "got you", "put in",
-            "placed", "included", "ordered", "here's your",
-        )
-        disclaimer_phrases = (
-            "sorry", "unfortunately", "don't have", "unavailable",
-            "not on the menu", "not in the cart", "couldn't add",
-            "cannot add", "wasn't able", "unable to",
-        )
-        response_lower = ai_response.lower()
-        for failed_name in failed_add_items:
-            if failed_name.lower() not in confirmed_item_names:
-                false_claim = any(
-                    phrase in response_lower and failed_name.lower() in response_lower
-                    for phrase in false_success_phrases
+    failed_items = [
+        ev.details.get("item_name", "") for ev in events
+        if ev.type in ("item_add_failed", "item_remove_failed", "item_modify_failed") and ev.details
+    ]
+    confirmed_clean_names = {
+        clean_dish_name(it.get("menu_item_name", ""))
+        for it in updated_order_dict.get("items", [])
+    }
+    response_lower = ai_response.lower()
+    false_success_phrases = (
+        "added", "adding", "got you", "put in", "placed", "included", "ordered", "here's your"
+    )
+    disclaimer_phrases = (
+        "sorry", "unfortunately", "don't have", "unavailable",
+        "not on the menu", "not in the cart", "couldn't add",
+        "cannot add", "wasn't able", "unable to"
+    )
+
+    for failed_name in failed_items:
+        clean_f = clean_dish_name(failed_name)
+        if clean_f and clean_f not in confirmed_clean_names:
+            false_claim = any(
+                phrase in response_lower and clean_f in response_lower
+                for phrase in false_success_phrases
+            )
+            has_disclaimer = any(w in response_lower for w in disclaimer_phrases)
+            if false_claim and not has_disclaimer:
+                logger.warning(
+                    "[CHAT] Overriding false success claim for failed item '%s'",
+                    failed_name,
                 )
-                has_disclaimer = any(w in response_lower for w in disclaimer_phrases)
-                if false_claim and not has_disclaimer:
-                    logger.warning(
-                        "[CHAT] Overriding false success claim for failed item '%s'",
-                        failed_name,
-                    )
-                    ai_response = (
-                        f"I wasn't able to add {failed_name} to your order — "
-                        f"it doesn't appear to be available right now. "
-                        f"Would you like to try something else from the menu?"
-                    )
-                    break
+                ai_response = (
+                    f"I wasn't able to add {failed_name} to your order — "
+                    f"it doesn't appear to be available right now. "
+                    f"Would you like to try something else from the menu?"
+                )
+                break
+
+    if has_intent and not applied_actions and not updated_order_dict.get("items"):
+        if any(p in response_lower for p in false_success_phrases) and not any(w in response_lower for w in disclaimer_phrases):
+            ai_response = "I wasn't able to find that item on our menu. Could you please specify which dish you'd like from our menu?"
 
     t_end = time.monotonic()
     logger.info("[PERF] total=%.0fms intent=%s order_reloaded=%s synced=%s",
@@ -918,6 +1023,9 @@ async def chat(chat_request: ChatRequest, request: Request, background_tasks: Ba
                     llm_recommendations.append({"name": d_name})
                     if len(llm_recommendations) >= 5:
                         break
+
+    if not llm_recommendations and recommended_picks:
+        llm_recommendations = [{"name": it["name"]} for it in recommended_picks[:5]]
 
     return ChatResponse(
         message=ai_response,

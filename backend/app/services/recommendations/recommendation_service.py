@@ -69,6 +69,19 @@ class RecommendationService:
                 "reason": "Popular with customers who share your taste",
                 "items": p4,
             })
+            for item in p4:
+                seen_ids.add(item["id"])
+
+        # Insufficient history / New customer fallback: Recommend based on actual popular orders
+        total_items_count = sum(len(r["items"]) for r in recommendations)
+        if total_items_count < 3:
+            p_pop = await self._priority_popular(seen_ids, limit=max(3, 5 - total_items_count))
+            if p_pop:
+                recommendations.append({
+                    "priority": 5,
+                    "reason": "Popular restaurant favorites",
+                    "items": p_pop,
+                })
 
         return recommendations
 
@@ -241,6 +254,35 @@ class RecommendationService:
             if item and item.is_available:
                 items.append(self._item_to_dict(item))
         return items[:3]
+
+    async def _priority_popular(self, seen_ids: set, limit: int = 5) -> List[Dict[str, Any]]:
+        """Recommend popular dishes based on actual confirmed orders, or top signature dishes."""
+        popular_ids = await self.order_repo.get_popular_menu_items(limit=10)
+        results = []
+        for mid in popular_ids:
+            if mid in seen_ids:
+                continue
+            item = await self.menu_repo.get_by_id(mid)
+            if item and item.is_available:
+                results.append(self._item_to_dict(item))
+                seen_ids.add(item.id)
+                if len(results) >= limit:
+                    break
+
+        if len(results) < limit:
+            signature_names = [
+                "Chicken Biryani", "Paneer Butter Masala", "Butter Chicken",
+                "Masala Dosa", "Butter Naan", "Veg Biryani"
+            ]
+            for name in signature_names:
+                if len(results) >= limit:
+                    break
+                item = await self.menu_repo.find_by_name(name)
+                if item and item.id not in seen_ids and item.is_available:
+                    results.append(self._item_to_dict(item))
+                    seen_ids.add(item.id)
+
+        return results
 
     def _item_to_dict(self, item: MenuItem) -> Dict[str, Any]:
         return {

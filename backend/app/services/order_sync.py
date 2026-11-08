@@ -48,7 +48,7 @@ def compute_llm_expected_order(
     # Apply raw_actions sequentially to mirror the LLM's intent
     for raw in raw_actions:
         action = raw.get("action", "none")
-        if action == "none":
+        if action in ("none", "clarify"):
             continue
 
         if action == "add":

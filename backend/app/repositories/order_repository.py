@@ -57,9 +57,12 @@ class OrderRepository:
             (i for i in items if i.menu_item_id == menu_item.id), None
         )
         if existing:
+            update_data = {"quantity": existing.quantity + quantity}
+            if customization_notes is not None:
+                update_data["customization_notes"] = customization_notes
             item = await prisma.orderitem.update(
                 where={"id": existing.id},
-                data={"quantity": existing.quantity + quantity}
+                data=update_data
             )
         else:
             item = await prisma.orderitem.create(
@@ -98,6 +101,51 @@ class OrderRepository:
                 data={"quantity": quantity}
             )
         await self._recalculate_total(order_id)
+
+    async def update_item(
+        self,
+        order_id: int,
+        order_item_id: int,
+        quantity: Optional[int] = None,
+        customization_notes: Optional[str] = None,
+    ) -> Optional[OrderItem]:
+        if quantity is not None and quantity <= 0:
+            await prisma.orderitem.delete(where={"id": order_item_id})
+            await self._recalculate_total(order_id)
+            return None
+
+        update_data = {}
+        if quantity is not None:
+            update_data["quantity"] = quantity
+        if customization_notes is not None:
+            update_data["customization_notes"] = customization_notes
+
+        if update_data:
+            item = await prisma.orderitem.update(
+                where={"id": order_item_id},
+                data=update_data
+            )
+            await self._recalculate_total(order_id)
+            return item
+        return await prisma.orderitem.find_unique(where={"id": order_item_id})
+
+    async def get_popular_menu_items(self, limit: int = 5) -> List[int]:
+        try:
+            rows = await prisma.query_raw(
+                '''
+                SELECT oi.menu_item_id, SUM(oi.quantity) as total_qty
+                FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE o.status = 'confirmed'
+                GROUP BY oi.menu_item_id
+                ORDER BY total_qty DESC
+                LIMIT $1
+                ''',
+                limit
+            )
+            return [row.get("menu_item_id") for row in rows if row.get("menu_item_id") is not None]
+        except Exception:
+            return []
 
     async def update_status(self, order: Order, status: str) -> Order:
         return await prisma.order.update(

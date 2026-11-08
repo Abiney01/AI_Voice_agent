@@ -232,42 +232,13 @@ export default function ChatPage() {
   const initialFrequentlyOrdered = useMemo(() => {
     if (!allMenuItems.length) return [];
 
-    // 1. Customer's explicit favorites
-    const favNames = (customer?.preferences?.favorite_dishes || '')
-      .toLowerCase()
-      .split(/[,;]+/)
-      .map(s => s.trim())
-      .filter(Boolean);
-
-    const favItems = allMenuItems.filter(item =>
-      favNames.some(fn => item.name.toLowerCase().includes(fn) || fn.includes(item.name.toLowerCase()))
-    );
-
-    // 2. Customer's past orders
-    const pastNames = (order?.items || []).map(i => i.menu_item_name.toLowerCase());
-    const pastItems = allMenuItems.filter(item =>
-      pastNames.includes(item.name.toLowerCase()) && !favItems.some(f => f.id === item.id)
-    );
-
-    // 3. Signature popular dishes (Biryani, Butter Chicken, Dosa, Espresso, Burgers, Pizza)
-    const popularKeywords = ['biryani', 'butter chicken', 'dosa', 'burger', 'pizza', 'tandoori', 'coffee', 'shake'];
-    const popularItems = allMenuItems.filter(item =>
-      popularKeywords.some(kw => item.name.toLowerCase().includes(kw)) &&
-      !favItems.some(f => f.id === item.id) &&
-      !pastItems.some(p => p.id === item.id)
-    );
-
-    const combined = [...favItems, ...pastItems, ...popularItems, ...allMenuItems];
-    const unique: MenuItem[] = [];
-    const seen = new Set<number>();
-    for (const it of combined) {
-      if (!seen.has(it.id)) {
-        seen.add(it.id);
-        unique.push(it);
-      }
-    }
-    return unique.slice(0, 5);
-  }, [allMenuItems, customer?.preferences?.favorite_dishes, order?.items]);
+    return filterAndRankMenu(allMenuItems, {
+      mealPeriod: activeMealPeriod,
+      currentRequest: latestUserMsg,
+      preferences: customer?.preferences,
+      orderHistory: (order?.items || []).map(i => i.menu_item_name),
+    }).slice(0, 5);
+  }, [allMenuItems, activeMealPeriod, latestUserMsg, customer?.preferences, order?.items]);
 
   // Dynamic Recommendations:
   // Shows exact LLM produced dishes once user asks for recommendations; falls back to frequently ordered initially

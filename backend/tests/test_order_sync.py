@@ -31,12 +31,20 @@ class DummyRequest:
 
 class TestOrderSync(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        await prisma.connect()
+        if "integration" in self._testMethodName:
+            try:
+                await asyncio.wait_for(prisma.connect(), timeout=2.0)
+            except Exception:
+                self.skipTest("Database not reachable for integration test")
         self.order_svc = OrderService()
         self.menu_repo = MenuRepository()
 
     async def asyncTearDown(self):
-        await prisma.disconnect()
+        try:
+            if prisma.is_connected():
+                await prisma.disconnect()
+        except Exception:
+            pass
 
     def test_scenario_d_configurable_pause_threshold(self):
         """Scenario D & E: Verify 2-second silence threshold is configurable via constants."""
